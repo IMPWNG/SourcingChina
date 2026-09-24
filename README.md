@@ -53,7 +53,8 @@ Copy `.env.example` to `.env.local`. Placeholders are not secrets. Leave them bl
 | `AIRWALLEX_COUNTRY_CODE` | Shopper country for hosted checkout. Default `FR`. |
 | `NEXT_PUBLIC_APP_URL` | Public origin. Airwallex success URLs must be `https`. |
 | `ADMIN_EMAILS` | Comma-separated emails promoted to admin on sign-in. Requires the secret key. |
-| `GOOGLE_VISION_API_KEY` | Optional. Document text detection for card images. |
+| `GOOGLE_VISION_API_KEY` | Optional. Document text detection for card images when ScrapeGraphAI is not configured. |
+| `SGAI_API_KEY` | Server only. ScrapeGraphAI key from their docs. Card upload uses it to extract company and contact fields. |
 | `DEMO_SESSION_SECRET` | Optional. Demo cookie HMAC. A local file is created if omitted. |
 
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are accepted as legacy aliases.
@@ -104,6 +105,6 @@ This environment did not have a Vercel login or a linked project, so production 
 
 - Payments are Airwallex, not Stripe.
 - Auth is Supabase Auth inside Next.js, not Clerk or Auth0.
-- OCR without `GOOGLE_VISION_API_KEY` expects pasted card text or the sample card. Images are still stored.
+- Card upload calls ScrapeGraphAI (`scrapegraph-js`, env `SGAI_API_KEY`) when that key is set. Their README documents this SDK and key for integrating the scraper into an app. If the key is missing or the call fails, upload falls back to Google Vision, then pasted text. Signup does not call the scraper.
 - Enrichment proposes a patch. An editor applies it. Empty fields are filled; existing values are kept.
 - Sample companies are fictional placeholders so the directory is usable before real cards are reviewed.

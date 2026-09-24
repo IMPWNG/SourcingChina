@@ -56,6 +56,13 @@ export default async function AdminCompanyPage({
         <h1 className="text-2xl font-semibold tracking-tight">{company.name_en || company.name_zh || "Unnamed draft"}</h1>
         <Badge variant={company.is_published ? "default" : "secondary"}>{company.is_published ? "Published" : "Draft"}</Badge>
       </div>
+      {query.warning === "scrapegraph" ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            ScrapeGraphAI could not read this card. The draft used Google Vision when that key is set, or the pasted text.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {query.saved ? <Alert><AlertDescription>Saved.</AlertDescription></Alert> : null}
       {query.applied ? <Alert><AlertDescription>Scrape proposal applied to empty fields.</AlertDescription></Alert> : null}
       {query.error === "recent" ? (

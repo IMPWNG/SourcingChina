@@ -11,6 +11,7 @@ import { crawlWebsite } from "@/lib/enrichment/crawl";
 import { isDemoMode } from "@/lib/env";
 import { logInfo } from "@/lib/log";
 import { recognizeImage } from "@/lib/ocr";
+import { extractCardWithScrapeGraph } from "@/lib/scrapegraph/extract";
 import { directory } from "@/lib/store";
 import { supabaseStore } from "@/lib/supabase/store";
 import {
@@ -309,6 +310,7 @@ export async function uploadCards(formData: FormData) {
   if (!files.length && !textOverride.trim()) redirect("/admin/upload?error=empty");
   const targets = files.length ? files : [null];
   const created: string[] = [];
+  let scrapeGraphFallback = false;
 
   for (const file of targets) {
     if (file && (file.size > 8_000_000 || !IMAGE_MIME_TYPES.includes(file.type as (typeof IMAGE_MIME_TYPES)[number]))) {
@@ -317,8 +319,8 @@ export async function uploadCards(formData: FormData) {
     let urlRef: string | null = null;
     let recognized: string | null = textOverride.trim() || null;
     let provider = recognized ? "pasted_text" : "none";
-    if (file) {
-      const bytes = Buffer.from(await file.arrayBuffer());
+    const bytes = file ? Buffer.from(await file.arrayBuffer()) : null;
+    if (file && bytes) {
       const id = randomUUID();
       const rawExt = file.name.split(".").pop()?.toLowerCase() || "img";
       const ext = /^[a-z0-9]{1,5}$/.test(rawExt) ? rawExt : "img";
@@ -329,25 +331,37 @@ export async function uploadCards(formData: FormData) {
       } else {
         urlRef = await supabaseStore.uploadCard(`${id}.${ext}`, bytes, file.type);
       }
-      if (!recognized) {
-        const vision = await recognizeImage(bytes, file.type);
-        recognized = vision.text;
-        provider = vision.provider;
-      }
     }
-    const raw = recognized ?? "";
-    const extraction = extractCard(raw);
+    const scraped = await extractCardWithScrapeGraph({
+      text: textOverride.trim() || null,
+      image: file && bytes ? { bytes, mime: file.type } : null,
+    });
+    let extraction = scraped.extraction;
+    if (scraped.attempted && !extraction) scrapeGraphFallback = true;
+    if (extraction) {
+      provider = "scrapegraphai";
+      recognized = scraped.rawText || recognized;
+    } else if (file && bytes && !textOverride.trim()) {
+      const vision = await recognizeImage(bytes, file.type);
+      recognized = vision.text;
+      provider = vision.provider;
+      extraction = extractCard(recognized ?? "");
+    } else {
+      extraction = extractCard(recognized ?? "");
+    }
     if (extraction.website) extraction.website = normalizeWebsite(extraction.website);
+    const raw = recognized ?? "";
     const company = await directory.createFromCard(extraction, {
       url_or_ref: urlRef,
       raw_text: raw,
-      payload: { provider, confidence: extraction.confidence, needs_text: !raw },
+      payload: { provider, confidence: extraction.confidence, needs_text: !raw, scrapegraph_error: scraped.error },
     });
     created.push(company.id);
     logInfo("card_ingested", { companyId: company.id, provider, hasText: Boolean(raw) });
   }
 
   revalidatePath("/admin/companies");
-  if (created.length === 1) redirect(`/admin/companies/${created[0]}`);
-  redirect(`/admin/upload?created=${created.length}`);
+  const warning = scrapeGraphFallback ? "warning=scrapegraph" : "";
+  if (created.length === 1) redirect(`/admin/companies/${created[0]}${warning ? `?${warning}` : ""}`);
+  redirect(`/admin/upload?created=${created.length}${warning ? `&${warning}` : ""}`);
 }

@@ -12,18 +12,25 @@ export const metadata: Metadata = { title: "Upload cards" };
 export default async function UploadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; created?: string }>;
+  searchParams: Promise<{ error?: string; created?: string; warning?: string }>;
 }) {
   const params = await searchParams;
   return (
     <main className="mx-auto max-w-2xl space-y-4 px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Upload business cards</h1>
       <p className="text-sm text-muted-foreground">
-        Each image becomes one unpublished company. If a vision key is set, the image is read on the server. Otherwise paste the card text, or load the sample card.
+        Each image becomes one unpublished company. When SGAI_API_KEY is set, ScrapeGraphAI extracts the company and contact fields. Without that key, Google Vision reads the image if GOOGLE_VISION_API_KEY is set. Otherwise paste the card text, or load the sample card.
       </p>
       {params.error === "empty" ? (
         <Alert variant="destructive">
           <AlertDescription>Add at least one image or paste card text.</AlertDescription>
+        </Alert>
+      ) : null}
+      {params.warning === "scrapegraph" ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            ScrapeGraphAI could not read this card. The draft used Google Vision when that key is set, or the pasted text.
+          </AlertDescription>
         </Alert>
       ) : null}
       {params.created ? (
