@@ -6,20 +6,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SAMPLE_CARD_TEXT } from "@/lib/seed";
+import { catalogNotice } from "@/lib/scrapegraph/catalog-message";
 
 export const metadata: Metadata = { title: "Upload cards" };
 
 export default async function UploadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; created?: string; warning?: string }>;
+  searchParams: Promise<{ error?: string; created?: string; warning?: string; catalog?: string; products?: string }>;
 }) {
   const params = await searchParams;
+  const notice = catalogNotice(params.catalog, params.products);
   return (
     <main className="mx-auto max-w-2xl space-y-4 px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Upload business cards</h1>
       <p className="text-sm text-muted-foreground">
-        Each image becomes one unpublished company. When SGAI_API_KEY is set, ScrapeGraphAI extracts the company and contact fields. Without that key, Google Vision reads the image if GOOGLE_VISION_API_KEY is set. Otherwise paste the card text, or load the sample card.
+        Each photo becomes one unpublished company. ScrapeGraphAI reads the card and, when the card has a website, crawls that site for products at the same time. Without SGAI_API_KEY, the card falls back to Google Vision or pasted text and the site is not crawled.
       </p>
       {params.error === "empty" ? (
         <Alert variant="destructive">
@@ -31,6 +33,11 @@ export default async function UploadPage({
           <AlertDescription>
             ScrapeGraphAI could not read this card. The draft used Google Vision when that key is set, or the pasted text.
           </AlertDescription>
+        </Alert>
+      ) : null}
+      {notice ? (
+        <Alert>
+          <AlertDescription>{notice}</AlertDescription>
         </Alert>
       ) : null}
       {params.created ? (

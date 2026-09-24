@@ -10,6 +10,18 @@ export type Family = {
   description: string | null;
 };
 
+export type Product = {
+  id: string;
+  company_id: string;
+  category_id: string | null;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  source_url: string | null;
+  details: Record<string, string>;
+  created_at: string;
+};
+
 export type Certification = { id: string; company_id: string; code: string };
 export type Factory = { id: string; company_id: string; name: string; address: string | null; city: string | null };
 export type Contact = {
@@ -102,6 +114,7 @@ export type SessionProfile = {
 export type AdminCompany = Company & {
   notes: string | null;
   families: Family[];
+  products: Product[];
   certifications: Certification[];
   factories: Factory[];
   contacts: Contact[];
@@ -111,6 +124,7 @@ export type AdminCompany = Company & {
 
 export type DirectoryCompany = Company & {
   families: Family[];
+  products: Product[];
   certifications: Certification[];
   factories: Factory[];
   contacts: Contact[];

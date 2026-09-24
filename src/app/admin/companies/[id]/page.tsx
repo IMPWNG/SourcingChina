@@ -23,6 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ProductList } from "@/components/product-list";
+import { catalogNotice } from "@/lib/scrapegraph/catalog-message";
 import { directory } from "@/lib/store";
 
 const selectClass = "h-8 w-full rounded-lg border border-input bg-background px-2 text-sm";
@@ -44,6 +46,7 @@ export default async function AdminCompanyPage({
   const query = await searchParams;
   const [company, categories] = await Promise.all([directory.adminGet(id), directory.listCategories()]);
   if (!company) notFound();
+  const notice = catalogNotice(query.catalog, query.products);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -61,6 +64,11 @@ export default async function AdminCompanyPage({
           <AlertDescription>
             ScrapeGraphAI could not read this card. The draft used Google Vision when that key is set, or the pasted text.
           </AlertDescription>
+        </Alert>
+      ) : null}
+      {notice ? (
+        <Alert>
+          <AlertDescription>{notice}</AlertDescription>
         </Alert>
       ) : null}
       {query.saved ? <Alert><AlertDescription>Saved.</AlertDescription></Alert> : null}
@@ -129,6 +137,15 @@ export default async function AdminCompanyPage({
             </div>
             <SubmitButton>Save changes</SubmitButton>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Products</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProductList products={company.products} categories={categories} />
         </CardContent>
       </Card>
 

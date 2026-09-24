@@ -25,6 +25,7 @@ import type {
   DirectoryFilters,
   Factory,
   Family,
+  Product,
   ScrapeJob,
   SessionProfile,
   Source,
@@ -38,6 +39,7 @@ type Db = {
   notes: Record<string, string>;
   categories: Category[];
   families: Family[];
+  products: Product[];
   certifications: Certification[];
   factories: Factory[];
   contacts: Contact[];
@@ -115,6 +117,7 @@ function seed(): Db {
     notes,
     categories,
     families,
+    products: [],
     certifications,
     factories: [],
     contacts: [
@@ -139,7 +142,9 @@ let chain: Promise<unknown> = Promise.resolve();
 async function readDb(): Promise<Db> {
   try {
     const raw = await readFile(path.join(process.cwd(), "data", "demo-db.json"), "utf8");
-    return JSON.parse(raw) as Db;
+    const parsed = JSON.parse(raw) as Db;
+    parsed.products ??= [];
+    return parsed;
   } catch {
     const initial = seed();
     await writeDb(initial);
@@ -204,6 +209,7 @@ function profileOf(company: Company, db: Db, publicContacts: boolean): Directory
   return {
     ...company,
     families: db.families.filter((item) => item.company_id === company.id),
+    products: db.products.filter((item) => item.company_id === company.id),
     certifications: db.certifications.filter((item) => item.company_id === company.id),
     factories: db.factories.filter((item) => item.company_id === company.id),
     contacts: db.contacts.filter((item) => item.company_id === company.id && (!publicContacts || item.is_public)),
@@ -468,6 +474,11 @@ export const demoStore = {
           family.company_id = primaryId;
         }
       }
+      for (const product of db.products.filter((item) => item.company_id === duplicateId)) {
+        if (!db.products.some((item) => item.company_id === primaryId && item.name.toLowerCase() === product.name.toLowerCase())) {
+          product.company_id = primaryId;
+        }
+      }
       for (const row of [...db.certifications, ...db.factories, ...db.contacts, ...db.sources]) {
         if (row.company_id === duplicateId) row.company_id = primaryId;
       }
@@ -593,6 +604,31 @@ export const demoStore = {
         captured_at: now,
       });
       return company;
+    });
+  },
+  addProducts(
+    companyId: string,
+    products: Omit<Product, "id" | "company_id" | "created_at">[],
+    status: "succeeded" | "failed" | "skipped",
+  ) {
+    return update((db) => {
+      const company = db.companies.find((item) => item.id === companyId);
+      if (!company) return [];
+      const now = new Date().toISOString();
+      const saved: Product[] = [];
+      for (const item of products) {
+        if (db.products.some((product) => product.company_id === companyId && product.name.toLowerCase() === item.name.toLowerCase())) {
+          continue;
+        }
+        const product: Product = { id: randomUUID(), company_id: companyId, created_at: now, ...item };
+        db.products.push(product);
+        saved.push(product);
+        if (item.category_id && !company.category_ids.includes(item.category_id)) company.category_ids.push(item.category_id);
+      }
+      company.last_scrape_status = status;
+      company.last_scraped_at = now;
+      company.updated_at = now;
+      return saved;
     });
   },
 };

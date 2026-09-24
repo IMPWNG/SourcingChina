@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fillEmptyFields, findDuplicatePairs, normalizeWebsite, type CardExtraction } from "@/lib/domain";
-import type { CompanyDraft, Company, DirectoryFilters } from "@/lib/records";
+import type { CompanyDraft, Company, DirectoryFilters, Product } from "@/lib/records";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -69,9 +69,31 @@ function searchable(company: Company, slugById: Map<string, string>, filters: Di
   return true;
 }
 
+function asProduct(row: Row): Product {
+  const raw = row.details;
+  const details: Record<string, string> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value === "string") details[key] = value;
+    }
+  }
+  return {
+    id: String(row.id),
+    company_id: String(row.company_id),
+    category_id: row.category_id ? String(row.category_id) : null,
+    name: String(row.name ?? ""),
+    description: row.description ? String(row.description) : null,
+    image_url: row.image_url ? String(row.image_url) : null,
+    source_url: row.source_url ? String(row.source_url) : null,
+    details,
+    created_at: String(row.created_at ?? ""),
+  };
+}
+
 async function relations(supabase: SupabaseClient, companyId: string, publicContacts: boolean) {
-  const [families, certifications, factories, contacts] = await Promise.all([
+  const [families, products, certifications, factories, contacts] = await Promise.all([
     supabase.from("product_families").select("*").eq("company_id", companyId),
+    supabase.from("products").select("*").eq("company_id", companyId).order("created_at"),
     supabase.from("certifications").select("*").eq("company_id", companyId),
     supabase.from("factories").select("*").eq("company_id", companyId),
     supabase
@@ -81,11 +103,13 @@ async function relations(supabase: SupabaseClient, companyId: string, publicCont
       .match(publicContacts ? { is_public: true } : {}),
   ]);
   fail(families.error);
+  fail(products.error);
   fail(certifications.error);
   fail(factories.error);
   fail(contacts.error);
   return {
     families: families.data ?? [],
+    products: ((products.data ?? []) as Row[]).map(asProduct),
     certifications: certifications.data ?? [],
     factories: factories.data ?? [],
     contacts: contacts.data ?? [],
@@ -349,7 +373,7 @@ export const supabaseStore = {
     if (Object.keys(filled).length) fail((await supabase.from("companies").update(filled).eq("id", primaryId)).error);
     const categoryIds = Array.from(new Set([...primary.category_ids, ...duplicate.category_ids]));
     await replaceCategories(supabase, primaryId, categoryIds);
-    for (const table of ["product_families", "certifications", "factories", "contacts", "sources", "scrape_jobs"] as const) {
+    for (const table of ["product_families", "products", "certifications", "factories", "contacts", "sources", "scrape_jobs"] as const) {
       fail((await supabase.from(table).update({ company_id: primaryId }).eq("company_id", duplicateId)).error);
     }
     fail(
@@ -400,6 +424,47 @@ export const supabaseStore = {
       payload: source.payload,
     });
     return company;
+  },
+  async addProducts(
+    companyId: string,
+    products: Omit<Product, "id" | "company_id" | "created_at">[],
+    status: "succeeded" | "failed" | "skipped",
+  ) {
+    const supabase = await createClient();
+    const saved: Product[] = [];
+    if (products.length) {
+      const rows = products.map((item) => ({
+        id: randomUUID(),
+        company_id: companyId,
+        category_id: item.category_id,
+        name: item.name,
+        description: item.description,
+        image_url: item.image_url,
+        source_url: item.source_url,
+        details: item.details,
+      }));
+      const inserted = await supabase.from("products").insert(rows).select("*");
+      fail(inserted.error);
+      saved.push(...((inserted.data ?? []) as Row[]).map(asProduct));
+      const { data: links, error: linkError } = await supabase.from("company_categories").select("category_id").eq("company_id", companyId);
+      fail(linkError);
+      const categoryIds = Array.from(
+        new Set([
+          ...((links ?? []) as { category_id: string }[]).map((link) => link.category_id),
+          ...products.map((item) => item.category_id).filter((id): id is string => Boolean(id)),
+        ]),
+      );
+      if (categoryIds.length) await replaceCategories(supabase, companyId, categoryIds);
+    }
+    fail(
+      (
+        await supabase
+          .from("companies")
+          .update({ last_scrape_status: status, last_scraped_at: new Date().toISOString() })
+          .eq("id", companyId)
+      ).error,
+    );
+    return saved;
   },
   async uploadCard(path: string, bytes: Buffer, contentType: string) {
     const supabase = await createClient();

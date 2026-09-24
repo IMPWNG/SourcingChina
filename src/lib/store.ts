@@ -3,7 +3,7 @@ import "server-only";
 import { isDemoMode } from "@/lib/env";
 import { demoStore } from "@/lib/demo/store";
 import { supabaseStore } from "@/lib/supabase/store";
-import type { CompanyDraft, DirectoryFilters } from "@/lib/records";
+import type { CompanyDraft, DirectoryFilters, Product } from "@/lib/records";
 import type { CardExtraction } from "@/lib/domain";
 
 function store() {
@@ -55,4 +55,9 @@ export const directory = {
     extraction: CardExtraction,
     source: { url_or_ref: string | null; raw_text: string; payload: Record<string, unknown> },
   ) => store().createFromCard(extraction, source),
+  addProducts: (
+    companyId: string,
+    products: Omit<Product, "id" | "company_id" | "created_at">[],
+    status: "succeeded" | "failed" | "skipped",
+  ) => store().addProducts(companyId, products, status),
 };

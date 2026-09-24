@@ -105,6 +105,6 @@ This environment did not have a Vercel login or a linked project, so production 
 
 - Payments are Airwallex, not Stripe.
 - Auth is Supabase Auth inside Next.js, not Clerk or Auth0.
-- Card upload calls ScrapeGraphAI (`scrapegraph-js`, env `SGAI_API_KEY`) when that key is set. Their README documents this SDK and key for integrating the scraper into an app. If the key is missing or the call fails, upload falls back to Google Vision, then pasted text. Signup does not call the scraper.
-- Enrichment proposes a patch. An editor applies it. Empty fields are filled; existing values are kept.
+- Card upload calls ScrapeGraphAI (`scrapegraph-js`, env `SGAI_API_KEY`). Card extraction and, when a website is already known, the site crawl run together. The crawl stays on that host, at most 8 pages and 45 seconds. Products are saved with name, description, image, source URL, and category. If the key is missing, the card falls back to Google Vision or pasted text and the crawl is skipped. A card with no website is not crawled. Apply `supabase/migrations/20260924143000_products.sql` before live product rows can be stored.
+- The older company-page scrape still proposes a patch for empty contact fields and product families. Upload no longer uses that path for products.
 - Sample companies are fictional placeholders so the directory is usable before real cards are reviewed.

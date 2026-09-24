@@ -52,7 +52,7 @@ export default function HomePage() {
             <h2 className="text-2xl font-semibold tracking-tight">How a company gets in</h2>
             <ol className="mt-4 space-y-2 text-sm text-muted-foreground">
               <li>1. A business card is uploaded and read into a draft.</li>
-              <li>2. If the card has a website, a narrow scrape can fill empty fields and product families.</li>
+              <li>2. If the card has a website, that site is crawled for products: photos, descriptions, and the other details on the page.</li>
               <li>3. An editor checks the draft and publishes it.</li>
             </ol>
             <p className="mt-4 text-sm">The first batch comes from the Chongqing motorcycle trade show. The public site does not show the show itself.</p>

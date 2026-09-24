@@ -11,7 +11,9 @@ import { crawlWebsite } from "@/lib/enrichment/crawl";
 import { isDemoMode } from "@/lib/env";
 import { logInfo } from "@/lib/log";
 import { recognizeImage } from "@/lib/ocr";
+import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { extractCardWithScrapeGraph } from "@/lib/scrapegraph/extract";
+import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { directory } from "@/lib/store";
 import { supabaseStore } from "@/lib/supabase/store";
 import {
@@ -303,14 +305,24 @@ export async function applyScrape(formData: FormData) {
   redirect(`/admin/companies/${companyId}?applied=1`);
 }
 
+function scrapeStatus(reason: CatalogReason): "succeeded" | "failed" | "skipped" {
+  if (reason === "failed") return "failed";
+  if (reason === "saved" || reason === "empty") return "succeeded";
+  return "skipped";
+}
+
 export async function uploadCards(formData: FormData) {
   await requireAdmin();
   const textOverride = String(formData.get("raw_text") ?? "");
   const files = formData.getAll("cards").filter((item): item is File => item instanceof File && item.size > 0);
   if (!files.length && !textOverride.trim()) redirect("/admin/upload?error=empty");
+  const categories = await directory.listCategories();
+  const pastedWebsite = textOverride.trim() ? extractCard(textOverride).website : null;
+  const earlyCrawl = pastedWebsite ? scrapeSiteProducts(pastedWebsite, categories) : null;
   const targets = files.length ? files : [null];
   const created: string[] = [];
   let scrapeGraphFallback = false;
+  const catalogs: { reason: CatalogReason; count: number }[] = [];
 
   for (const file of targets) {
     if (file && (file.size > 8_000_000 || !IMAGE_MIME_TYPES.includes(file.type as (typeof IMAGE_MIME_TYPES)[number]))) {
@@ -350,18 +362,49 @@ export async function uploadCards(formData: FormData) {
       extraction = extractCard(recognized ?? "");
     }
     if (extraction.website) extraction.website = normalizeWebsite(extraction.website);
+    const website = pastedWebsite ?? extraction.website;
+    const crawl = earlyCrawl ? await earlyCrawl : await scrapeSiteProducts(website, categories);
     const raw = recognized ?? "";
     const company = await directory.createFromCard(extraction, {
       url_or_ref: urlRef,
       raw_text: raw,
       payload: { provider, confidence: extraction.confidence, needs_text: !raw, scrapegraph_error: scraped.error },
     });
+    let savedCount = 0;
+    let catalogReason = crawl.reason;
+    try {
+      const saved = await directory.addProducts(company.id, crawl.products, scrapeStatus(crawl.reason));
+      savedCount = saved.length;
+      if (website) {
+        await directory.addSource({
+          company_id: company.id,
+          source_type: "website",
+          url_or_ref: website,
+          raw_text: null,
+          payload: { catalog: crawl.reason, products: saved.length },
+        });
+      }
+    } catch (error) {
+      catalogReason = "failed";
+      logInfo("product_save_failed", { error: error instanceof Error ? error.message.slice(0, 180) : "save_failed" });
+    }
+    catalogs.push({ reason: catalogReason, count: savedCount });
     created.push(company.id);
-    logInfo("card_ingested", { companyId: company.id, provider, hasText: Boolean(raw) });
+    logInfo("card_ingested", { companyId: company.id, provider, hasText: Boolean(raw), products: savedCount });
   }
 
   revalidatePath("/admin/companies");
-  const warning = scrapeGraphFallback ? "warning=scrapegraph" : "";
-  if (created.length === 1) redirect(`/admin/companies/${created[0]}${warning ? `?${warning}` : ""}`);
-  redirect(`/admin/upload?created=${created.length}${warning ? `&${warning}` : ""}`);
+  revalidatePath("/directory");
+  const params = new URLSearchParams();
+  if (scrapeGraphFallback) params.set("warning", "scrapegraph");
+  const reasons = new Set(catalogs.map((item) => item.reason));
+  if (reasons.size === 1 && catalogs[0]) {
+    params.set("catalog", catalogs[0].reason);
+    params.set("products", String(catalogs.reduce((sum, item) => sum + item.count, 0)));
+  } else if (reasons.size > 1) {
+    params.set("catalog", "mixed");
+  }
+  const query = params.toString();
+  if (created.length === 1) redirect(`/admin/companies/${created[0]}${query ? `?${query}` : ""}`);
+  redirect(`/admin/upload?created=${created.length}${query ? `&${query}` : ""}`);
 }

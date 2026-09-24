@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProductList } from "@/components/product-list";
 import { directory } from "@/lib/store";
 
 type Params = { id: string };
@@ -67,6 +68,16 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
           <p>Export markets: {company.export_markets.length ? company.export_markets.join(", ") : "Not stated"}</p>
         </CardContent>
       </Card>
+      {company.products.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Products</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProductList products={company.products} categories={categories} />
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle>Product families</CardTitle>
