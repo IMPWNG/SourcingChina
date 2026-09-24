@@ -30,7 +30,7 @@ export function planSiteCrawl(input: { hasKey: boolean; website: string | null }
 }
 
 export function catalogMessage(reason: CatalogReason, count = 0): string {
-  if (reason === "no_key") return "Site crawl skipped because SGAI_API_KEY is not set. The card was still saved.";
+  if (reason === "no_key") return "Site crawl skipped because MAMMOUTH_API_KEY is not set. The card was still saved.";
   if (reason === "no_website") return "No website on the card, so the site was not crawled.";
   if (reason === "failed") return "The company site could not be crawled. Card fields were saved.";
   if (reason === "empty") return "The site was crawled and no individual products were found.";

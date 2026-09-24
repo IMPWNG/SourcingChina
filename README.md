@@ -53,8 +53,9 @@ Copy `.env.example` to `.env.local`. Placeholders are not secrets. Leave them bl
 | `AIRWALLEX_COUNTRY_CODE` | Shopper country for hosted checkout. Default `FR`. |
 | `NEXT_PUBLIC_APP_URL` | Public origin. Airwallex success URLs must be `https`. |
 | `ADMIN_EMAILS` | Comma-separated emails promoted to admin on sign-in. Requires the secret key. |
-| `GOOGLE_VISION_API_KEY` | Optional. Document text detection for card images when ScrapeGraphAI is not configured. |
-| `SGAI_API_KEY` | Server only. ScrapeGraphAI key from their docs. Card upload uses it to extract company and contact fields. |
+| `GOOGLE_VISION_API_KEY` | Optional. Document text detection for card images when Mammouth is not configured or cannot read the photo. |
+| `MAMMOUTH_API_KEY` | Server only. Mammouth key. Card upload and the site product crawl use it. |
+| `MAMMOUTH_MODEL` | Server only. Defaults to `gpt-4.1-nano`. |
 | `DEMO_SESSION_SECRET` | Optional. Demo cookie HMAC. A local file is created if omitted. |
 
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are accepted as legacy aliases.
@@ -105,6 +106,6 @@ This environment did not have a Vercel login or a linked project, so production 
 
 - Payments are Airwallex, not Stripe.
 - Auth is Supabase Auth inside Next.js, not Clerk or Auth0.
-- Card upload calls ScrapeGraphAI (`scrapegraph-js`, env `SGAI_API_KEY`). Card extraction and, when a website is already known, the site crawl run together. The crawl stays on that host, at most 8 pages and 45 seconds. Products are saved with name, description, image, source URL, and category. If the key is missing, the card falls back to Google Vision or pasted text and the crawl is skipped. A card with no website is not crawled. Apply `supabase/migrations/20260924143000_products.sql` before live product rows can be stored.
+- Card upload calls Mammouth’s OpenAI-compatible API at `https://api.mammouth.ai/v1` with `MAMMOUTH_MODEL` (`gpt-4.1-nano` by default). Card extraction and, when a website is already known, the site crawl run together. The crawl stays on that host, at most 8 pages and 45 seconds, then Mammouth extracts products (name, description, image, category). The card photo is sent with the request. `gpt-4.1-nano` does not read that photo, so a photo-only card uses Google Vision text when that key is set, and that text is sent to Mammouth for the company fields. Pasted text is sent to Mammouth directly. If `MAMMOUTH_API_KEY` is missing, upload does not crash: the card uses Vision or pasted text and the crawl is skipped. A card with no website is not crawled. Apply `supabase/migrations/20260924143000_products.sql` before live product rows can be stored.
 - The older company-page scrape still proposes a patch for empty contact fields and product families. Upload no longer uses that path for products.
 - Sample companies are fictional placeholders so the directory is usable before real cards are reviewed.

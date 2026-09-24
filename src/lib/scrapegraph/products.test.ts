@@ -11,7 +11,7 @@ test("a missing key or missing website skips the crawl", () => {
   assert.deepEqual(planSiteCrawl({ hasKey: false, website: "https://apexride.example" }), { action: "skip", reason: "no_key" });
   assert.deepEqual(planSiteCrawl({ hasKey: true, website: null }), { action: "skip", reason: "no_website" });
   assert.equal(planSiteCrawl({ hasKey: true, website: "https://apexride.example/path" }).action, "crawl");
-  assert.match(catalogMessage("no_key"), /SGAI_API_KEY/);
+  assert.match(catalogMessage("no_key"), /MAMMOUTH_API_KEY/);
   assert.match(catalogMessage("no_website"), /No website/);
 });
 

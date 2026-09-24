@@ -344,23 +344,33 @@ export async function uploadCards(formData: FormData) {
         urlRef = await supabaseStore.uploadCard(`${id}.${ext}`, bytes, file.type);
       }
     }
-    const scraped = await extractCardWithScrapeGraph({
-      text: textOverride.trim() || null,
-      image: file && bytes ? { bytes, mime: file.type } : null,
-    });
+    const image = file && bytes ? { bytes, mime: file.type } : null;
+    let scraped = await extractCardWithScrapeGraph({ text: textOverride.trim() || null, image });
     let extraction = scraped.extraction;
-    if (scraped.attempted && !extraction) scrapeGraphFallback = true;
     if (extraction) {
-      provider = "scrapegraphai";
+      provider = "mammouth";
       recognized = scraped.rawText || recognized;
     } else if (file && bytes && !textOverride.trim()) {
       const vision = await recognizeImage(bytes, file.type);
       recognized = vision.text;
       provider = vision.provider;
-      extraction = extractCard(recognized ?? "");
+      if (recognized?.trim()) {
+        const fromText = await extractCardWithScrapeGraph({ text: recognized, image: null });
+        if (fromText.extraction) {
+          extraction = fromText.extraction;
+          provider = "mammouth";
+          recognized = fromText.rawText || recognized;
+          scraped = fromText;
+        } else {
+          extraction = extractCard(recognized);
+        }
+      } else {
+        extraction = extractCard("");
+      }
     } else {
       extraction = extractCard(recognized ?? "");
     }
+    if (scraped.attempted && provider !== "mammouth") scrapeGraphFallback = true;
     if (extraction.website) extraction.website = normalizeWebsite(extraction.website);
     const website = pastedWebsite ?? extraction.website;
     const crawl = earlyCrawl ? await earlyCrawl : await scrapeSiteProducts(website, categories);
@@ -368,7 +378,7 @@ export async function uploadCards(formData: FormData) {
     const company = await directory.createFromCard(extraction, {
       url_or_ref: urlRef,
       raw_text: raw,
-      payload: { provider, confidence: extraction.confidence, needs_text: !raw, scrapegraph_error: scraped.error },
+      payload: { provider, confidence: extraction.confidence, needs_text: !raw, mammouth_error: scraped.error },
     });
     let savedCount = 0;
     let catalogReason = crawl.reason;

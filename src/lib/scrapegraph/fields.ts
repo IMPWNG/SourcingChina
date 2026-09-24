@@ -29,14 +29,14 @@ export const CARD_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export function readScrapeGraphApiKey(value: string | undefined): string | null {
+export function readMammouthApiKey(value: string | undefined): string | null {
   const key = value?.trim() ?? "";
   if (!key || /your-|placeholder/i.test(key)) return null;
   return key;
 }
 
 export function scrapeGraphApiKey(): string | null {
-  return readScrapeGraphApiKey(process.env.SGAI_API_KEY);
+  return readMammouthApiKey(process.env.MAMMOUTH_API_KEY);
 }
 
 function blank(value: unknown): string | null {

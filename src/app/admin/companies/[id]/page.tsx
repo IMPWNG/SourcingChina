@@ -62,7 +62,7 @@ export default async function AdminCompanyPage({
       {query.warning === "scrapegraph" ? (
         <Alert variant="destructive">
           <AlertDescription>
-            ScrapeGraphAI could not read this card. The draft used Google Vision when that key is set, or the pasted text.
+            Mammouth could not read this card. The draft used Google Vision when that key is set, or the pasted text.
           </AlertDescription>
         </Alert>
       ) : null}

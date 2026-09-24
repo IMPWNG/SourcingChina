@@ -21,7 +21,7 @@ export default async function UploadPage({
     <main className="mx-auto max-w-2xl space-y-4 px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Upload business cards</h1>
       <p className="text-sm text-muted-foreground">
-        Each photo becomes one unpublished company. ScrapeGraphAI reads the card and, when the card has a website, crawls that site for products at the same time. Without SGAI_API_KEY, the card falls back to Google Vision or pasted text and the site is not crawled.
+        Each photo becomes one unpublished company. Mammouth reads the card and, when the card has a website, crawls that site for products at the same time. Without MAMMOUTH_API_KEY, the card falls back to Google Vision or pasted text and the site is not crawled.
       </p>
       {params.error === "empty" ? (
         <Alert variant="destructive">
@@ -31,7 +31,7 @@ export default async function UploadPage({
       {params.warning === "scrapegraph" ? (
         <Alert variant="destructive">
           <AlertDescription>
-            ScrapeGraphAI could not read this card. The draft used Google Vision when that key is set, or the pasted text.
+            Mammouth could not read this card. The draft used Google Vision when that key is set, or the pasted text.
           </AlertDescription>
         </Alert>
       ) : null}

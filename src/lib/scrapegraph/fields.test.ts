@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFromScrapeGraph, readScrapeGraphApiKey } from "./fields";
+import { cardFromScrapeGraph, readMammouthApiKey } from "./fields";
 
-test("a missing or placeholder ScrapeGraph key is treated as unset", () => {
-  assert.equal(readScrapeGraphApiKey(undefined), null);
-  assert.equal(readScrapeGraphApiKey("  "), null);
-  assert.equal(readScrapeGraphApiKey("your-sgai-key"), null);
-  assert.equal(readScrapeGraphApiKey("sgai-live"), "sgai-live");
+test("a missing or placeholder Mammouth key is treated as unset", () => {
+  assert.equal(readMammouthApiKey(undefined), null);
+  assert.equal(readMammouthApiKey("  "), null);
+  assert.equal(readMammouthApiKey("your-mammouth-key"), null);
+  assert.equal(readMammouthApiKey("mm-live"), "mm-live");
 });
 
 test("scrapegraph card json maps onto stored company fields and drops blanks", () => {
