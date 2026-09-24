@@ -21,3 +21,8 @@ export async function isDirectoryWritable(dir: string): Promise<boolean> {
 export function isReadOnlyFsError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "EROFS";
 }
+
+/** A missing demo file is created only when the disk can accept the write. */
+export function shouldPersistDemoSeed(writable: boolean, error: unknown): boolean {
+  return writable && !isReadOnlyFsError(error);
+}

@@ -4,21 +4,34 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isDirectoryWritable, isReadOnlyFsError } from "@/lib/demo/filesystem";
 
 const COOKIE = "sc_session";
+let ephemeralSecret: string | null = null;
 
 async function secret(): Promise<string> {
   if (process.env.DEMO_SESSION_SECRET?.trim()) return process.env.DEMO_SESSION_SECRET.trim();
   const file = path.join(process.cwd(), "data", ".demo-secret");
   try {
-    return (await readFile(file, "utf8")).trim();
+    const existing = (await readFile(file, "utf8")).trim();
+    if (existing) return existing;
   } catch {
-    const { randomBytes } = await import("node:crypto");
-    const value = randomBytes(32).toString("hex");
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, value, { mode: 0o600 });
-    return value;
+    // The secret file is absent on a fresh or read-only host.
   }
+  if (ephemeralSecret) return ephemeralSecret;
+  const { randomBytes } = await import("node:crypto");
+  const value = randomBytes(32).toString("hex");
+  if (await isDirectoryWritable(process.cwd())) {
+    try {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, value, { mode: 0o600 });
+      return value;
+    } catch (error) {
+      if (!isReadOnlyFsError(error)) throw error;
+    }
+  }
+  ephemeralSecret = value;
+  return value;
 }
 
 function sign(body: string, key: string): string {

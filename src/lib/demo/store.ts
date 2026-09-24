@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fillEmptyFields, findDuplicatePairs, normalizeWebsite, type CardExtraction } from "@/lib/domain";
-import { isDirectoryWritable } from "@/lib/demo/filesystem";
+import { isDirectoryWritable, isReadOnlyFsError, shouldPersistDemoSeed } from "@/lib/demo/filesystem";
 import { hashPassword, verifyPassword } from "@/lib/demo/password";
 import {
   CATEGORIES,
@@ -138,6 +138,12 @@ function seed(): Db {
 }
 
 let chain: Promise<unknown> = Promise.resolve();
+let memorySeed: Db | null = null;
+
+function freshSeed(): Db {
+  memorySeed ??= seed();
+  return structuredClone(memorySeed);
+}
 
 async function readDb(): Promise<Db> {
   try {
@@ -145,9 +151,15 @@ async function readDb(): Promise<Db> {
     const parsed = JSON.parse(raw) as Db;
     parsed.products ??= [];
     return parsed;
-  } catch {
-    const initial = seed();
-    await writeDb(initial);
+  } catch (error) {
+    const initial = freshSeed();
+    if (!shouldPersistDemoSeed(await isDirectoryWritable(process.cwd()), error)) return initial;
+    try {
+      await writeDb(initial);
+    } catch (writeError) {
+      if (isReadOnlyFsError(writeError)) return initial;
+      throw writeError;
+    }
     return initial;
   }
 }

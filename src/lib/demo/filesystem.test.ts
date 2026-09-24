@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { SUPABASE_SIGNUP_REQUIRED, demoSignupBlockReason, isDirectoryWritable, isReadOnlyFsError } from "./filesystem";
+import { SUPABASE_SIGNUP_REQUIRED, demoSignupBlockReason, isDirectoryWritable, isReadOnlyFsError, shouldPersistDemoSeed } from "./filesystem";
 
 test("supabase signup does not fall back to the demo database", () => {
   assert.equal(demoSignupBlockReason(true, false), null);
@@ -34,4 +34,8 @@ test("writability follows the directory and read-only errors are recognized", as
   }
   assert.equal(isReadOnlyFsError(Object.assign(new Error("fail"), { code: "EROFS" })), true);
   assert.equal(isReadOnlyFsError(new Error("other")), false);
+  const readOnly = Object.assign(new Error("fail"), { code: "EROFS" });
+  assert.equal(shouldPersistDemoSeed(false, Object.assign(new Error("missing"), { code: "ENOENT" })), false);
+  assert.equal(shouldPersistDemoSeed(true, readOnly), false);
+  assert.equal(shouldPersistDemoSeed(true, Object.assign(new Error("missing"), { code: "ENOENT" })), true);
 });
