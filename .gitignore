@@ -36,6 +36,7 @@ yarn-error.log*
 
 # local demo database and card uploads
 /data/
+/cards.json
 
 # vercel
 .vercel

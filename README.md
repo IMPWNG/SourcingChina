@@ -35,6 +35,19 @@ npm test
 npm run lint
 ```
 
+## Read cards on your machine
+
+These two commands stay on your computer. Put `MAMMOUTH_API_KEY` and the Supabase URL and secret in `.env.local`. That file is gitignored.
+
+The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). Tesseract reads Chinese and English. That text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`). A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the OCR text and skips the crawl.
+
+The second command reads that JSON and upserts companies and products in Supabase. A matching website, or the Chinese and English names when there is no website, updates the existing row. New companies stay unpublished. If the Supabase URL or secret is missing, the command prints the variable names and exits.
+
+```bash
+npm run cards -- ./business-cards --out cards.json
+npm run cards:import -- cards.json
+```
+
 ## Environment
 
 Copy `.env.example` to `.env.local`. Placeholders are not secrets. Leave them blank to stay in demo mode.
