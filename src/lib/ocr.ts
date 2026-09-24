@@ -10,6 +10,30 @@ import { readableCardText } from "@/lib/ocr-text";
 const require = createRequire(path.join(process.cwd(), "package.json"));
 const CACHE_PATH = path.join("/tmp", "sourcing-china-tesseract");
 const LANG_PATH = path.join(CACHE_PATH, "lang");
+const OCR_MS = 25_000;
+
+/** The worker thread loads these with Node require. Resolving them here fails in our try/catch instead of crashing the function. */
+function assertWorkerModules(): void {
+  require.resolve("bmp-js");
+  require.resolve("is-url");
+  require.resolve("tesseract.js");
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("ocr_timeout")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 export type CardOcr = {
   text: string | null;
@@ -72,11 +96,15 @@ function exclusive<T>(task: () => Promise<T>): Promise<T> {
 /** Read a card photo with Tesseract (English + simplified Chinese). Never calls Google Vision. */
 export async function recognizeImage(bytes: Buffer, mime: string): Promise<CardOcr> {
   try {
-    const text = await exclusive(async () => {
-      const worker = await getWorker();
-      const result = await worker.recognize(bytes);
-      return readableCardText(result.data.text);
-    });
+    assertWorkerModules();
+    const text = await withTimeout(
+      exclusive(async () => {
+        const worker = await getWorker();
+        const result = await worker.recognize(bytes);
+        return readableCardText(result.data.text);
+      }),
+      OCR_MS,
+    );
     return { text, provider: "tesseract" };
   } catch (error) {
     const failed = workerPromise;

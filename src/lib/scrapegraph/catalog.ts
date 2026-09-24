@@ -99,11 +99,12 @@ async function collectPages(start: string, deadline: number): Promise<SitePage[]
 export async function scrapeSiteProducts(
   website: string | null,
   categories: { id: string; slug: string; name_en: string; name_zh: string | null }[],
+  options?: { budgetMs?: number },
 ): Promise<ProductCrawlResult> {
   const plan = planSiteCrawl({ hasKey: Boolean(mammouthConfig()), website });
   if (plan.action === "skip") return { reason: plan.reason, products: [] };
   const siteHost = new URL(plan.website).host;
-  const deadline = Date.now() + PRODUCT_CRAWL_MS;
+  const deadline = Date.now() + (options?.budgetMs ?? PRODUCT_CRAWL_MS);
 
   try {
     const pages = await collectPages(plan.website, deadline);
@@ -112,10 +113,15 @@ export async function scrapeSiteProducts(
       .map((page) => `URL: ${page.url}\nTEXT: ${page.text}\nIMAGES:\n${page.images.join("\n")}`)
       .join("\n\n")
       .slice(0, 24_000);
+    const remaining = deadline - Date.now();
+    if (remaining < 1_500) {
+      logInfo("product_crawl_failed", { error: "budget" });
+      return { reason: "failed", products: [] };
+    }
     const result = await mammouthJson({
       system: PRODUCT_SYSTEM,
       user: packed,
-      timeoutMs: Math.max(5_000, deadline - Date.now()),
+      timeoutMs: remaining,
     });
     if (!result.ok) {
       logInfo("product_crawl_failed", { error: result.error });

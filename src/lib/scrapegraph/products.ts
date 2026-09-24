@@ -4,6 +4,8 @@ export const PRODUCT_PAGE_LIMIT = 8;
 export const PRODUCT_DEPTH = 2;
 export const PRODUCT_LINKS_PER_PAGE = 6;
 export const PRODUCT_CRAWL_MS = 45_000;
+/** Upload returns the draft first. The site crawl on that request stays inside this bound. */
+export const UPLOAD_PRODUCT_CRAWL_MS = 8_000;
 export const PRODUCT_SAVE_LIMIT = 40;
 
 export type CatalogReason = "no_key" | "no_website" | "failed" | "empty" | "saved";

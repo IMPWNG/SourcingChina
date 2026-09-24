@@ -22,7 +22,7 @@ export default async function UploadPage({
     <main className="mx-auto max-w-2xl space-y-4 px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Upload business cards</h1>
       <p className="text-sm text-muted-foreground">
-        Each photo becomes one unpublished company. The app reads the photo with Tesseract, in Chinese and English, then Mammouth turns that text into company fields. When the card has a website, that site is crawled for products at the same time. Without MAMMOUTH_API_KEY, the card still keeps the OCR text and the site is not crawled.
+        Each photo becomes one unpublished company. The app reads the photo with Tesseract, in Chinese and English, then Mammouth turns that text into company fields. The draft is saved before the website is crawled, and that crawl stays short so the request can finish. Without MAMMOUTH_API_KEY, the card still keeps the OCR text and the site is not crawled.
       </p>
       {params.error === "empty" ? (
         <Alert variant="destructive">

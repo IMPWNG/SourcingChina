@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { catalogMessage, planSiteCrawl, productsFromPage, uniqueProducts } from "./products";
+import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, planSiteCrawl, productsFromPage, uniqueProducts } from "./products";
 
 const categories = [
   { id: "helmets-id", slug: "helmets", name_en: "Helmets", name_zh: "头盔" },
   { id: "lighting-id", slug: "lighting", name_en: "Lighting", name_zh: "灯具" },
 ];
+
+test("upload crawl stays short enough to return the draft", () => {
+  assert.ok(UPLOAD_PRODUCT_CRAWL_MS <= 8_000);
+  assert.ok(UPLOAD_PRODUCT_CRAWL_MS >= 1_000);
+});
 
 test("a missing key or missing website skips the crawl", () => {
   assert.deepEqual(planSiteCrawl({ hasKey: false, website: "https://apexride.example" }), { action: "skip", reason: "no_key" });

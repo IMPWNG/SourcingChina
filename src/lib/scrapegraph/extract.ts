@@ -30,6 +30,7 @@ function cardUser(text: string, image: { bytes: Buffer; mime: string } | null): 
 export async function extractCardWithScrapeGraph(input: {
   text: string | null;
   image: { bytes: Buffer; mime: string } | null;
+  timeoutMs?: number;
 }): Promise<ScrapeGraphCardResult> {
   if (!mammouthConfig()) return { attempted: false, extraction: null, rawText: null, error: null };
 
@@ -38,9 +39,9 @@ export async function extractCardWithScrapeGraph(input: {
     input.image && input.image.bytes.length <= MAX_IMAGE_BYTES && IMAGE_TYPES.has(input.image.mime) ? input.image : null;
   if (!text && !image) return { attempted: false, extraction: null, rawText: null, error: null };
 
-  let result = await mammouthJson({ system: SYSTEM, user: cardUser(text, image) });
+  let result = await mammouthJson({ system: SYSTEM, user: cardUser(text, image), timeoutMs: input.timeoutMs });
   if (!result.ok && text && image) {
-    result = await mammouthJson({ system: SYSTEM, user: cardUser(text, null) });
+    result = await mammouthJson({ system: SYSTEM, user: cardUser(text, null), timeoutMs: input.timeoutMs });
   }
   if (!result.ok) {
     logInfo("mammouth_card_failed", { error: result.error });

@@ -12,9 +12,9 @@ import { crawlWebsite } from "@/lib/enrichment/crawl";
 import { isDemoMode } from "@/lib/env";
 import { logInfo } from "@/lib/log";
 import { recognizeImage } from "@/lib/ocr";
-import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
+import { scrapeSiteProducts, type ProductCrawlResult } from "@/lib/scrapegraph/catalog";
 import { extractCardWithScrapeGraph, type ScrapeGraphCardResult } from "@/lib/scrapegraph/extract";
-import type { CatalogReason } from "@/lib/scrapegraph/products";
+import { UPLOAD_PRODUCT_CRAWL_MS, type CatalogReason } from "@/lib/scrapegraph/products";
 import { directory } from "@/lib/store";
 import { supabaseStore } from "@/lib/supabase/store";
 import {
@@ -318,7 +318,7 @@ function errorText(error: unknown): string {
 
 async function structureCard(text: string): Promise<ScrapeGraphCardResult> {
   try {
-    return await extractCardWithScrapeGraph({ text, image: null });
+    return await extractCardWithScrapeGraph({ text, image: null, timeoutMs: 12_000 });
   } catch (error) {
     logInfo("mammouth_card_threw", { error: errorText(error) });
     return { attempted: true, extraction: null, rawText: text, error: "extract_failed" };
@@ -370,7 +370,6 @@ async function ingestCards(formData: FormData) {
   if (!files.length && !textOverride.trim()) redirect("/admin/upload?error=empty");
   const categories = await directory.listCategories();
   const pastedWebsite = textOverride.trim() ? extractCard(textOverride).website : null;
-  const earlyCrawl = pastedWebsite ? scrapeSiteProducts(pastedWebsite, categories) : null;
   const targets = files.length ? files : [null];
   const created: string[] = [];
   let scrapeGraphFallback = false;
@@ -434,7 +433,6 @@ async function ingestCards(formData: FormData) {
     if (scraped.attempted && provider !== "mammouth") scrapeGraphFallback = true;
     if (extraction.website) extraction.website = normalizeWebsite(extraction.website);
     const website = pastedWebsite ?? extraction.website;
-    const crawl = earlyCrawl ? await earlyCrawl : await scrapeSiteProducts(website, categories);
     const raw = recognized ?? "";
     let companyId: string;
     try {
@@ -456,6 +454,13 @@ async function ingestCards(formData: FormData) {
       saveFailed = true;
       logInfo("draft_save_failed", { error: errorText(error) });
       continue;
+    }
+    let crawl: ProductCrawlResult = { reason: "no_website", products: [] };
+    try {
+      crawl = await scrapeSiteProducts(website, categories, { budgetMs: UPLOAD_PRODUCT_CRAWL_MS });
+    } catch (error) {
+      logInfo("product_crawl_failed", { error: errorText(error) });
+      crawl = { reason: "failed", products: [] };
     }
     let savedCount = 0;
     let catalogReason = crawl.reason;
