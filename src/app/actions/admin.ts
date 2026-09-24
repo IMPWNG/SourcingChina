@@ -322,6 +322,7 @@ export async function uploadCards(formData: FormData) {
   const targets = files.length ? files : [null];
   const created: string[] = [];
   let scrapeGraphFallback = false;
+  let anyOcrEmpty = false;
   const catalogs: { reason: CatalogReason; count: number }[] = [];
 
   for (const file of targets) {
@@ -344,27 +345,32 @@ export async function uploadCards(formData: FormData) {
         urlRef = await supabaseStore.uploadCard(`${id}.${ext}`, bytes, file.type);
       }
     }
-    const image = file && bytes ? { bytes, mime: file.type } : null;
-    let scraped = await extractCardWithScrapeGraph({ text: textOverride.trim() || null, image });
+    let ocrEmpty = false;
+    let scraped =
+      textOverride.trim()
+        ? await extractCardWithScrapeGraph({ text: textOverride.trim(), image: null })
+        : { attempted: false as const, extraction: null, rawText: null, error: null };
     let extraction = scraped.extraction;
-    if (extraction) {
+    if (textOverride.trim() && extraction) {
       provider = "mammouth";
       recognized = scraped.rawText || recognized;
     } else if (file && bytes && !textOverride.trim()) {
-      const vision = await recognizeImage(bytes, file.type);
-      recognized = vision.text;
-      provider = vision.provider;
-      if (recognized?.trim()) {
+      const ocr = await recognizeImage(bytes, file.type);
+      recognized = ocr.text;
+      provider = ocr.provider;
+      if (recognized) {
         const fromText = await extractCardWithScrapeGraph({ text: recognized, image: null });
+        scraped = fromText;
         if (fromText.extraction) {
           extraction = fromText.extraction;
           provider = "mammouth";
           recognized = fromText.rawText || recognized;
-          scraped = fromText;
         } else {
           extraction = extractCard(recognized);
         }
       } else {
+        ocrEmpty = true;
+        anyOcrEmpty = true;
         extraction = extractCard("");
       }
     } else {
@@ -378,7 +384,7 @@ export async function uploadCards(formData: FormData) {
     const company = await directory.createFromCard(extraction, {
       url_or_ref: urlRef,
       raw_text: raw,
-      payload: { provider, confidence: extraction.confidence, needs_text: !raw, mammouth_error: scraped.error },
+      payload: { provider, confidence: extraction.confidence, needs_text: !raw, ocr_empty: ocrEmpty, mammouth_error: scraped.error },
     });
     let savedCount = 0;
     let catalogReason = crawl.reason;
@@ -407,6 +413,7 @@ export async function uploadCards(formData: FormData) {
   revalidatePath("/directory");
   const params = new URLSearchParams();
   if (scrapeGraphFallback) params.set("warning", "scrapegraph");
+  if (anyOcrEmpty) params.set("ocr", "empty");
   const reasons = new Set(catalogs.map((item) => item.reason));
   if (reasons.size === 1 && catalogs[0]) {
     params.set("catalog", catalogs[0].reason);

@@ -9,11 +9,12 @@ import { SAMPLE_CARD_TEXT } from "@/lib/seed";
 import { catalogNotice } from "@/lib/scrapegraph/catalog-message";
 
 export const metadata: Metadata = { title: "Upload cards" };
+export const maxDuration = 60;
 
 export default async function UploadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; created?: string; warning?: string; catalog?: string; products?: string }>;
+  searchParams: Promise<{ error?: string; created?: string; warning?: string; catalog?: string; products?: string; ocr?: string }>;
 }) {
   const params = await searchParams;
   const notice = catalogNotice(params.catalog, params.products);
@@ -21,7 +22,7 @@ export default async function UploadPage({
     <main className="mx-auto max-w-2xl space-y-4 px-4 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Upload business cards</h1>
       <p className="text-sm text-muted-foreground">
-        Each photo becomes one unpublished company. Mammouth reads the card and, when the card has a website, crawls that site for products at the same time. Without MAMMOUTH_API_KEY, the card falls back to Google Vision or pasted text and the site is not crawled.
+        Each photo becomes one unpublished company. The app reads the photo with Tesseract, in Chinese and English, then Mammouth turns that text into company fields. When the card has a website, that site is crawled for products at the same time. Without MAMMOUTH_API_KEY, the card still keeps the OCR text and the site is not crawled.
       </p>
       {params.error === "empty" ? (
         <Alert variant="destructive">
@@ -31,13 +32,18 @@ export default async function UploadPage({
       {params.warning === "scrapegraph" ? (
         <Alert variant="destructive">
           <AlertDescription>
-            Mammouth could not read this card. The draft used Google Vision when that key is set, or the pasted text.
+            Mammouth could not structure this card. The draft kept the OCR text.
           </AlertDescription>
         </Alert>
       ) : null}
       {notice ? (
         <Alert>
           <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      ) : null}
+      {params.ocr === "empty" ? (
+        <Alert variant="destructive">
+          <AlertDescription>This photo had no readable text. The draft was saved without card fields.</AlertDescription>
         </Alert>
       ) : null}
       {params.created ? (
@@ -57,7 +63,7 @@ export default async function UploadPage({
             </div>
             <div className="space-y-2">
               <Label htmlFor="raw_text">Card text</Label>
-              <Textarea id="raw_text" name="raw_text" rows={10} placeholder="Paste OCR text if you do not have a vision API key." defaultValue="" />
+              <Textarea id="raw_text" name="raw_text" rows={10} placeholder="Optional. Paste card text if a photo cannot be read." defaultValue="" />
             </div>
             <SubmitButton pendingLabel="Reading cards…">Create drafts</SubmitButton>
           </form>

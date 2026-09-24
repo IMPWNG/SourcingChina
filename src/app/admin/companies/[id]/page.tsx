@@ -47,6 +47,8 @@ export default async function AdminCompanyPage({
   const [company, categories] = await Promise.all([directory.adminGet(id), directory.listCategories()]);
   if (!company) notFound();
   const notice = catalogNotice(query.catalog, query.products);
+  const photoUnread =
+    query.ocr === "empty" || company.sources.some((source) => source.source_type === "card" && source.payload.ocr_empty === true);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -62,8 +64,13 @@ export default async function AdminCompanyPage({
       {query.warning === "scrapegraph" ? (
         <Alert variant="destructive">
           <AlertDescription>
-            Mammouth could not read this card. The draft used Google Vision when that key is set, or the pasted text.
+            Mammouth could not structure this card. The draft kept the OCR text.
           </AlertDescription>
+        </Alert>
+      ) : null}
+      {photoUnread ? (
+        <Alert variant="destructive">
+          <AlertDescription>This photo had no readable text. The draft was saved without card fields.</AlertDescription>
         </Alert>
       ) : null}
       {notice ? (
