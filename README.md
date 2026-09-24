@@ -12,7 +12,7 @@ This is not a marketplace. Profiles do not show prices, stock, SKUs, stand numbe
 - Airwallex Hosted Payment Page plus a signed webhook (the product spec mentioned Stripe; this repo uses Airwallex)
 - Narrow website enrichment with `fetch` + Cheerio, robots.txt, and a 10-page cap
 
-Without Supabase keys the app runs in demo mode: sample companies, demo sign-in, and a checkout confirmation that does not charge a card.
+Without Supabase keys the app runs in demo mode: sample companies, demo sign-in, and a checkout confirmation that does not charge a card. A Supabase URL alone does not leave demo mode. On a read-only host, new card drafts are kept in memory and in a browser cookie so the draft page can still open.
 
 ## Run locally
 

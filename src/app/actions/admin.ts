@@ -6,13 +6,14 @@ import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
-import { extractCard, fillEmptyFields, normalizeWebsite } from "@/lib/domain";
+import { extractCard, fillEmptyFields, normalizeWebsite, type CardExtraction } from "@/lib/domain";
+import { isDirectoryWritable, isReadOnlyFsError } from "@/lib/demo/filesystem";
 import { crawlWebsite } from "@/lib/enrichment/crawl";
 import { isDemoMode } from "@/lib/env";
 import { logInfo } from "@/lib/log";
 import { recognizeImage } from "@/lib/ocr";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
-import { extractCardWithScrapeGraph } from "@/lib/scrapegraph/extract";
+import { extractCardWithScrapeGraph, type ScrapeGraphCardResult } from "@/lib/scrapegraph/extract";
 import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { directory } from "@/lib/store";
 import { supabaseStore } from "@/lib/supabase/store";
@@ -305,6 +306,47 @@ export async function applyScrape(formData: FormData) {
   redirect(`/admin/companies/${companyId}?applied=1`);
 }
 
+function rethrowNavigation(error: unknown): void {
+  if (typeof error !== "object" || error === null || !("digest" in error)) return;
+  const digest = String((error as { digest?: unknown }).digest ?? "");
+  if (digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_HTTP_ERROR_FALLBACK")) throw error;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 180) : "upload_failed";
+}
+
+async function structureCard(text: string): Promise<ScrapeGraphCardResult> {
+  try {
+    return await extractCardWithScrapeGraph({ text, image: null });
+  } catch (error) {
+    logInfo("mammouth_card_threw", { error: errorText(error) });
+    return { attempted: true, extraction: null, rawText: text, error: "extract_failed" };
+  }
+}
+
+async function storeCardImage(id: string, ext: string, bytes: Buffer, mime: string): Promise<string | null> {
+  if (isDemoMode()) {
+    if (!(await isDirectoryWritable(process.cwd()))) return null;
+    try {
+      const dir = path.join(process.cwd(), "data", "demo-uploads");
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, `${id}.${ext}`), bytes);
+      return `local:${id}.${ext}`;
+    } catch (error) {
+      if (isReadOnlyFsError(error)) return null;
+      logInfo("card_image_store_failed", { error: errorText(error) });
+      return null;
+    }
+  }
+  try {
+    return await supabaseStore.uploadCard(`${id}.${ext}`, bytes, mime);
+  } catch (error) {
+    logInfo("card_image_store_failed", { error: errorText(error) });
+    return null;
+  }
+}
+
 function scrapeStatus(reason: CatalogReason): "succeeded" | "failed" | "skipped" {
   if (reason === "failed") return "failed";
   if (reason === "saved" || reason === "empty") return "succeeded";
@@ -313,6 +355,16 @@ function scrapeStatus(reason: CatalogReason): "succeeded" | "failed" | "skipped"
 
 export async function uploadCards(formData: FormData) {
   await requireAdmin();
+  try {
+    await ingestCards(formData);
+  } catch (error) {
+    rethrowNavigation(error);
+    logInfo("upload_failed", { error: errorText(error) });
+    redirect("/admin/upload?error=failed");
+  }
+}
+
+async function ingestCards(formData: FormData) {
   const textOverride = String(formData.get("raw_text") ?? "");
   const files = formData.getAll("cards").filter((item): item is File => item instanceof File && item.size > 0);
   if (!files.length && !textOverride.trim()) redirect("/admin/upload?error=empty");
@@ -323,10 +375,14 @@ export async function uploadCards(formData: FormData) {
   const created: string[] = [];
   let scrapeGraphFallback = false;
   let anyOcrEmpty = false;
+  let anyOcrFailed = false;
+  let saveFailed = false;
+  let skippedInvalid = false;
   const catalogs: { reason: CatalogReason; count: number }[] = [];
 
   for (const file of targets) {
     if (file && (file.size > 8_000_000 || !IMAGE_MIME_TYPES.includes(file.type as (typeof IMAGE_MIME_TYPES)[number]))) {
+      skippedInvalid = true;
       continue;
     }
     let urlRef: string | null = null;
@@ -337,20 +393,14 @@ export async function uploadCards(formData: FormData) {
       const id = randomUUID();
       const rawExt = file.name.split(".").pop()?.toLowerCase() || "img";
       const ext = /^[a-z0-9]{1,5}$/.test(rawExt) ? rawExt : "img";
-      if (isDemoMode()) {
-        await mkdir(path.join(process.cwd(), "data", "demo-uploads"), { recursive: true });
-        await writeFile(path.join(process.cwd(), "data", "demo-uploads", `${id}.${ext}`), bytes);
-        urlRef = `local:${id}.${ext}`;
-      } else {
-        urlRef = await supabaseStore.uploadCard(`${id}.${ext}`, bytes, file.type);
-      }
+      urlRef = await storeCardImage(id, ext, bytes, file.type);
     }
     let ocrEmpty = false;
-    let scraped =
-      textOverride.trim()
-        ? await extractCardWithScrapeGraph({ text: textOverride.trim(), image: null })
-        : { attempted: false as const, extraction: null, rawText: null, error: null };
-    let extraction = scraped.extraction;
+    let ocrFailed = false;
+    let scraped: ScrapeGraphCardResult = textOverride.trim()
+      ? await structureCard(textOverride.trim())
+      : { attempted: false, extraction: null, rawText: null, error: null };
+    let extraction: CardExtraction | null = scraped.extraction;
     if (textOverride.trim() && extraction) {
       provider = "mammouth";
       recognized = scraped.rawText || recognized;
@@ -358,8 +408,12 @@ export async function uploadCards(formData: FormData) {
       const ocr = await recognizeImage(bytes, file.type);
       recognized = ocr.text;
       provider = ocr.provider;
-      if (recognized) {
-        const fromText = await extractCardWithScrapeGraph({ text: recognized, image: null });
+      if (ocr.provider === "tesseract_error") {
+        ocrFailed = true;
+        anyOcrFailed = true;
+        extraction = extractCard("");
+      } else if (recognized) {
+        const fromText = await structureCard(recognized);
         scraped = fromText;
         if (fromText.extraction) {
           extraction = fromText.extraction;
@@ -376,24 +430,41 @@ export async function uploadCards(formData: FormData) {
     } else {
       extraction = extractCard(recognized ?? "");
     }
+    if (!extraction) extraction = extractCard(recognized ?? "");
     if (scraped.attempted && provider !== "mammouth") scrapeGraphFallback = true;
     if (extraction.website) extraction.website = normalizeWebsite(extraction.website);
     const website = pastedWebsite ?? extraction.website;
     const crawl = earlyCrawl ? await earlyCrawl : await scrapeSiteProducts(website, categories);
     const raw = recognized ?? "";
-    const company = await directory.createFromCard(extraction, {
-      url_or_ref: urlRef,
-      raw_text: raw,
-      payload: { provider, confidence: extraction.confidence, needs_text: !raw, ocr_empty: ocrEmpty, mammouth_error: scraped.error },
-    });
+    let companyId: string;
+    try {
+      const company = await directory.createFromCard(extraction, {
+        url_or_ref: urlRef,
+        raw_text: raw,
+        payload: {
+          provider,
+          confidence: extraction.confidence,
+          needs_text: !raw,
+          ocr_empty: ocrEmpty,
+          ocr_failed: ocrFailed,
+          mammouth_error: scraped.error,
+        },
+      });
+      companyId = company.id;
+    } catch (error) {
+      rethrowNavigation(error);
+      saveFailed = true;
+      logInfo("draft_save_failed", { error: errorText(error) });
+      continue;
+    }
     let savedCount = 0;
     let catalogReason = crawl.reason;
     try {
-      const saved = await directory.addProducts(company.id, crawl.products, scrapeStatus(crawl.reason));
+      const saved = await directory.addProducts(companyId, crawl.products, scrapeStatus(crawl.reason));
       savedCount = saved.length;
       if (website) {
         await directory.addSource({
-          company_id: company.id,
+          company_id: companyId,
           source_type: "website",
           url_or_ref: website,
           raw_text: null,
@@ -402,18 +473,25 @@ export async function uploadCards(formData: FormData) {
       }
     } catch (error) {
       catalogReason = "failed";
-      logInfo("product_save_failed", { error: error instanceof Error ? error.message.slice(0, 180) : "save_failed" });
+      logInfo("product_save_failed", { error: errorText(error) });
     }
     catalogs.push({ reason: catalogReason, count: savedCount });
-    created.push(company.id);
-    logInfo("card_ingested", { companyId: company.id, provider, hasText: Boolean(raw), products: savedCount });
+    created.push(companyId);
+    logInfo("card_ingested", { companyId, provider, hasText: Boolean(raw), products: savedCount });
+  }
+
+  if (!created.length) {
+    if (saveFailed) redirect("/admin/upload?error=save");
+    if (skippedInvalid) redirect("/admin/upload?error=invalid");
+    redirect("/admin/upload?error=empty");
   }
 
   revalidatePath("/admin/companies");
   revalidatePath("/directory");
   const params = new URLSearchParams();
   if (scrapeGraphFallback) params.set("warning", "scrapegraph");
-  if (anyOcrEmpty) params.set("ocr", "empty");
+  if (anyOcrFailed) params.set("ocr", "failed");
+  else if (anyOcrEmpty) params.set("ocr", "empty");
   const reasons = new Set(catalogs.map((item) => item.reason));
   if (reasons.size === 1 && catalogs[0]) {
     params.set("catalog", catalogs[0].reason);

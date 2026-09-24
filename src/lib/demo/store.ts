@@ -3,7 +3,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { cookies } from "next/headers";
 import { fillEmptyFields, findDuplicatePairs, normalizeWebsite, type CardExtraction } from "@/lib/domain";
+import { mergeCardDrafts, packCardDrafts, unpackCardDrafts, type CardDraftBundle } from "@/lib/demo/card-drafts";
 import { isDirectoryWritable, isReadOnlyFsError, shouldPersistDemoSeed } from "@/lib/demo/filesystem";
 import { hashPassword, verifyPassword } from "@/lib/demo/password";
 import {
@@ -138,40 +140,122 @@ function seed(): Db {
 }
 
 let chain: Promise<unknown> = Promise.resolve();
-let memorySeed: Db | null = null;
+let memoryDb: Db | null = null;
 
-function freshSeed(): Db {
-  memorySeed ??= seed();
-  return structuredClone(memorySeed);
+const PROJECT_DB = path.join(process.cwd(), "data", "demo-db.json");
+const TMP_DB = path.join("/tmp", "sourcing-china-demo", "demo-db.json");
+const DRAFT_COOKIE = "sc_card_drafts";
+
+function seedIds(): Set<string> {
+  return new Set(SEED_COMPANIES.map((item) => item.id));
+}
+
+function ephemeralBundle(db: Db): CardDraftBundle {
+  const ids = seedIds();
+  const companies = db.companies.filter((company) => !ids.has(company.id));
+  const companyIds = new Set(companies.map((company) => company.id));
+  return {
+    companies,
+    sources: db.sources.filter((source) => source.company_id && companyIds.has(source.company_id)),
+    contacts: db.contacts.filter((contact) => companyIds.has(contact.company_id)),
+    products: db.products.filter((product) => companyIds.has(product.company_id)),
+  };
+}
+
+async function readCardDraftCookie(): Promise<CardDraftBundle | null> {
+  try {
+    const jar = await cookies();
+    return unpackCardDrafts(jar.get(DRAFT_COOKIE)?.value);
+  } catch {
+    return null;
+  }
+}
+
+async function writeCardDraftCookie(bundle: CardDraftBundle): Promise<void> {
+  const packed = packCardDrafts(bundle);
+  if (!packed) return;
+  try {
+    const jar = await cookies();
+    jar.set(DRAFT_COOKIE, packed, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+  } catch {
+    // Cookie writes are only available inside a server action.
+  }
+}
+
+async function readJsonDb(file: string): Promise<Db | null> {
+  try {
+    const parsed = JSON.parse(await readFile(file, "utf8")) as Db;
+    parsed.products ??= [];
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function writeProject(db: Db): Promise<void> {
+  const dir = path.dirname(PROJECT_DB);
+  await mkdir(dir, { recursive: true });
+  await writeFile(PROJECT_DB, JSON.stringify(db));
+}
+
+function remember(db: Db): Db {
+  memoryDb = structuredClone(db);
+  return structuredClone(db);
+}
+
+async function readEphemeral(): Promise<Db> {
+  const fromTmp = await readJsonDb(TMP_DB);
+  if (fromTmp) return remember(fromTmp);
+  if (!memoryDb) memoryDb = seed();
+  return structuredClone(memoryDb);
 }
 
 async function readDb(): Promise<Db> {
   try {
-    const raw = await readFile(path.join(process.cwd(), "data", "demo-db.json"), "utf8");
+    const raw = await readFile(PROJECT_DB, "utf8");
     const parsed = JSON.parse(raw) as Db;
     parsed.products ??= [];
     return parsed;
   } catch (error) {
-    const initial = freshSeed();
-    if (!shouldPersistDemoSeed(await isDirectoryWritable(process.cwd()), error)) return initial;
-    try {
-      await writeDb(initial);
-    } catch (writeError) {
-      if (isReadOnlyFsError(writeError)) return initial;
-      throw writeError;
+    const writable = await isDirectoryWritable(process.cwd());
+    if (shouldPersistDemoSeed(writable, error)) {
+      const initial = seed();
+      try {
+        await writeProject(initial);
+        return initial;
+      } catch (writeError) {
+        if (!isReadOnlyFsError(writeError)) throw writeError;
+      }
     }
-    return initial;
+    const db = await readEphemeral();
+    mergeCardDrafts(db, await readCardDraftCookie());
+    return db;
   }
 }
 
 async function writeDb(db: Db): Promise<void> {
-  if (!(await isDirectoryWritable(process.cwd()))) {
-    throw Object.assign(new Error("Demo database is not writable."), { code: "EROFS" });
+  memoryDb = structuredClone(db);
+  if (await isDirectoryWritable(process.cwd())) {
+    try {
+      await writeProject(db);
+      return;
+    } catch (error) {
+      if (!isReadOnlyFsError(error)) throw error;
+    }
   }
-  const dir = path.join(process.cwd(), "data");
-  const file = path.join(dir, "demo-db.json");
-  await mkdir(dir, { recursive: true });
-  await writeFile(file, JSON.stringify(db));
+  try {
+    await mkdir(path.dirname(TMP_DB), { recursive: true });
+    await writeFile(TMP_DB, JSON.stringify(db));
+  } catch {
+    // A read-only host keeps the draft in this process and in the card-draft cookie.
+  }
+  await writeCardDraftCookie(ephemeralBundle(db));
 }
 
 function update<T>(fn: (db: Db) => Promise<T> | T): Promise<T> {

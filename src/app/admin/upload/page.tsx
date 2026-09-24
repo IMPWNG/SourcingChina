@@ -29,6 +29,21 @@ export default async function UploadPage({
           <AlertDescription>Add at least one image or paste card text.</AlertDescription>
         </Alert>
       ) : null}
+      {params.error === "invalid" ? (
+        <Alert variant="destructive">
+          <AlertDescription>Use a jpg, png, webp, or heic image under 8 MB, or paste the card text.</AlertDescription>
+        </Alert>
+      ) : null}
+      {params.error === "failed" ? (
+        <Alert variant="destructive">
+          <AlertDescription>The upload could not be finished. Paste the card text and try again.</AlertDescription>
+        </Alert>
+      ) : null}
+      {params.error === "save" ? (
+        <Alert variant="destructive">
+          <AlertDescription>The draft could not be saved. Paste the card text and try again.</AlertDescription>
+        </Alert>
+      ) : null}
       {params.warning === "scrapegraph" ? (
         <Alert variant="destructive">
           <AlertDescription>
@@ -44,6 +59,11 @@ export default async function UploadPage({
       {params.ocr === "empty" ? (
         <Alert variant="destructive">
           <AlertDescription>This photo had no readable text. The draft was saved without card fields.</AlertDescription>
+        </Alert>
+      ) : null}
+      {params.ocr === "failed" ? (
+        <Alert variant="destructive">
+          <AlertDescription>The photo could not be read. The draft was saved without card fields.</AlertDescription>
         </Alert>
       ) : null}
       {params.created ? (

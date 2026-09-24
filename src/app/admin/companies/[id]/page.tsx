@@ -49,6 +49,11 @@ export default async function AdminCompanyPage({
   const notice = catalogNotice(query.catalog, query.products);
   const photoUnread =
     query.ocr === "empty" || company.sources.some((source) => source.source_type === "card" && source.payload.ocr_empty === true);
+  const photoFailed =
+    query.ocr === "failed" || company.sources.some((source) => source.source_type === "card" && source.payload.ocr_failed === true);
+  const mammouthFailed =
+    query.warning === "scrapegraph" ||
+    company.sources.some((source) => source.source_type === "card" && typeof source.payload.mammouth_error === "string" && source.payload.mammouth_error);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -61,14 +66,19 @@ export default async function AdminCompanyPage({
         <h1 className="text-2xl font-semibold tracking-tight">{company.name_en || company.name_zh || "Unnamed draft"}</h1>
         <Badge variant={company.is_published ? "default" : "secondary"}>{company.is_published ? "Published" : "Draft"}</Badge>
       </div>
-      {query.warning === "scrapegraph" ? (
+      {mammouthFailed ? (
         <Alert variant="destructive">
           <AlertDescription>
             Mammouth could not structure this card. The draft kept the OCR text.
           </AlertDescription>
         </Alert>
       ) : null}
-      {photoUnread ? (
+      {photoFailed ? (
+        <Alert variant="destructive">
+          <AlertDescription>The photo could not be read. The draft was saved without card fields.</AlertDescription>
+        </Alert>
+      ) : null}
+      {photoUnread && !photoFailed ? (
         <Alert variant="destructive">
           <AlertDescription>This photo had no readable text. The draft was saved without card fields.</AlertDescription>
         </Alert>
