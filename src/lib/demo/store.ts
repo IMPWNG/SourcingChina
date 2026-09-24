@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fillEmptyFields, findDuplicatePairs, normalizeWebsite, type CardExtraction } from "@/lib/domain";
+import { isDirectoryWritable } from "@/lib/demo/filesystem";
 import { hashPassword, verifyPassword } from "@/lib/demo/password";
 import {
   CATEGORIES,
@@ -147,8 +148,12 @@ async function readDb(): Promise<Db> {
 }
 
 async function writeDb(db: Db): Promise<void> {
-  const file = path.join(process.cwd(), "data", "demo-db.json");
-  await mkdir(path.join(process.cwd(), "data"), { recursive: true });
+  if (!(await isDirectoryWritable(process.cwd()))) {
+    throw Object.assign(new Error("Demo database is not writable."), { code: "EROFS" });
+  }
+  const dir = path.join(process.cwd(), "data");
+  const file = path.join(dir, "demo-db.json");
+  await mkdir(dir, { recursive: true });
   await writeFile(file, JSON.stringify(db));
 }
 

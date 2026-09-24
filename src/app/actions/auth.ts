@@ -4,9 +4,10 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { clientKey, promoteIfAllowlisted } from "@/lib/auth";
 import { safeNext } from "@/lib/domain";
+import { SUPABASE_SIGNUP_REQUIRED, demoSignupBlockReason, isDirectoryWritable, isReadOnlyFsError } from "@/lib/demo/filesystem";
 import { clearDemoSession, setDemoSession } from "@/lib/demo/session";
 import { demoStore } from "@/lib/demo/store";
-import { isDemoMode } from "@/lib/env";
+import { isDemoMode, isSupabaseConfigured } from "@/lib/env";
 import { rateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { loginSchema } from "@/lib/validation";
@@ -51,10 +52,13 @@ export async function signup(_prev: AuthState, formData: FormData): Promise<Auth
   }
 
   if (isDemoMode()) {
+    const block = demoSignupBlockReason(isSupabaseConfigured(), await isDirectoryWritable(process.cwd()));
+    if (block) return { error: block };
     try {
       const user = await demoStore.register(parsed.data.email, parsed.data.password);
       await setDemoSession(user.id);
     } catch (error) {
+      if (isReadOnlyFsError(error)) return { error: SUPABASE_SIGNUP_REQUIRED };
       return { error: error instanceof Error ? error.message : "Could not create the demo account." };
     }
     redirect("/pricing");
