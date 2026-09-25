@@ -30,6 +30,7 @@ from scripts.card_fields import (  # noqa: E402
     classify_locally,
     company_record,
     load_env_file,
+    prepare_ocr_text,
     website_tokens,
 )
 
@@ -364,6 +365,7 @@ def unread(path: str, message: str) -> dict[str, Any]:
 def read_one(reader: CardReader, path: str) -> dict[str, Any]:
     image = open_photo(path)
     text, width, height, angle = horizontal_text(reader, image)
+    text = prepare_ocr_text(text)
     turned = f", rotated {angle}° so the text is horizontal" if angle else ""
     print(f"Decoded {path} at {width}×{height}{turned}", file=sys.stderr)
     if not text.strip():

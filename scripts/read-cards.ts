@@ -22,13 +22,21 @@ async function crawlCards(cards: CardRecord[]): Promise<void> {
   const categories = CATEGORIES.map((item) => ({ id: item.id, slug: item.slug, name_en: item.name_en, name_zh: item.name_zh }));
   const slugById = new Map<string, string>(categories.map((item) => [item.id, item.slug]));
   for (const card of cards) {
-    if (!card.company.website) {
+    const sites = (card.company.websites?.length ? card.company.websites : [card.company.website]).filter(
+      (site): site is string => Boolean(site),
+    );
+    if (!sites.length) {
       card.catalog = "no_website";
       card.products = [];
       continue;
     }
     try {
-      const crawl = await scrapeSiteProducts(card.company.website, categories);
+      let crawl = await scrapeSiteProducts(sites[0] ?? null, categories);
+      for (const site of sites.slice(1)) {
+        if (crawl.reason === "saved") break;
+        const next = await scrapeSiteProducts(site, categories);
+        if (next.reason === "saved" || crawl.reason === "failed") crawl = next;
+      }
       card.catalog = crawl.reason;
       card.products = crawl.products.map((item) => ({
         name: item.name,

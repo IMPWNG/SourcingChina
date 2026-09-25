@@ -54,6 +54,12 @@ function hostOf(url: string): string | null {
   }
 }
 
+function sameSite(url: string, siteHost: string): boolean {
+  const host = hostOf(url);
+  if (!host) return false;
+  return host.replace(/^www\./i, "").toLowerCase() === siteHost.replace(/^www\./i, "").toLowerCase();
+}
+
 function absoluteHttp(value: string | null, base: string): string | null {
   if (!value) return null;
   try {
@@ -63,6 +69,51 @@ function absoluteHttp(value: string | null, base: string): string | null {
   } catch {
     return null;
   }
+}
+
+const PRODUCTISH = /BMS|充电器|控制器|电池|电机|头盔|灯具|灯/;
+const LISTED_NAV = /^(首页|关于我们|产品中心|解决方案|新闻资讯|联系我们|了解更多|注册|登录|产品|products?)$/i;
+
+export function contentImageUrls(urls: string[], pageUrl: string): string[] {
+  const images: string[] = [];
+  for (const raw of urls) {
+    const url = absoluteHttp(raw, pageUrl);
+    if (!url || /logo|icon|sprite|placeholder|richdefault/i.test(url)) continue;
+    if (!images.includes(url)) images.push(url);
+  }
+  return images;
+}
+
+export function productsListedOnPage(input: {
+  text: string;
+  imageUrls: string[];
+  pageUrl: string;
+  siteHost: string;
+  categories: { id: string; slug: string; name_en: string; name_zh: string | null }[];
+}): ScrapedProduct[] {
+  if (!sameSite(input.pageUrl, input.siteHost)) return [];
+  const photos = contentImageUrls(input.imageUrls, input.pageUrl);
+  const names: string[] = [];
+  for (const token of input.text.split(/\s+/)) {
+    const name = token.replace(/^[|｜,，;；:：]+|[|｜,，;；:：]+$/g, "");
+    if (name.length < 4 || name.length > 40 || LISTED_NAV.test(name) || !PRODUCTISH.test(name)) continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  return names.slice(0, 12).map((name, index) => {
+    const at = input.text.indexOf(name);
+    const rest = at < 0 ? "" : input.text.slice(at + name.length).replace(/^[\s|｜:：\-–—]+/, "");
+    const end = rest.search(/[。！？]/);
+    const sentence = (end >= 12 ? rest.slice(0, end + 1) : "").trim();
+    const category = /BMS|电池/.test(name) ? "电池" : /充电|控制器|电机/.test(name) ? "电气" : null;
+    return {
+      name,
+      description: sentence.length >= 12 ? sentence.slice(0, 600) : null,
+      image_url: photos.length ? photos[index % photos.length] ?? null : null,
+      source_url: input.pageUrl,
+      category_id: categoryId(category, input.categories),
+      details: {},
+    };
+  });
 }
 
 function categoryId(
@@ -110,7 +161,7 @@ export function productsFromPage(input: {
   siteHost: string;
   categories: { id: string; slug: string; name_en: string; name_zh: string | null }[];
 }): ScrapedProduct[] {
-  if (hostOf(input.pageUrl) !== input.siteHost) return [];
+  if (!sameSite(input.pageUrl, input.siteHost)) return [];
   const images = input.imageUrls.map((url) => absoluteHttp(url, input.pageUrl)).filter((url): url is string => Boolean(url));
   const products: ScrapedProduct[] = [];
   for (const item of asProducts(input.json)) {
@@ -119,13 +170,19 @@ export function productsFromPage(input: {
     const name = blank(row.name);
     if (!name || name.length < 2 || name.length > 120 || NAV_NAME.test(name) || /price|sku|\$|€|¥/i.test(name)) continue;
     const description = blank(row.description)?.slice(0, 600) ?? null;
-    const image = absoluteHttp(blank(row.image_url) ?? blank(row.image), input.pageUrl) ?? (images.length === 1 ? images[0] : null);
+    const photos = contentImageUrls(images, input.pageUrl);
+    const image =
+      absoluteHttp(blank(row.image_url) ?? blank(row.image), input.pageUrl) ??
+      (photos.length ? photos[products.length % photos.length] ?? null : null) ??
+      (images.length === 1 ? images[0] : null);
     products.push({
       name,
       description,
       image_url: image,
       source_url: input.pageUrl,
-      category_id: categoryId(blank(row.category), input.categories),
+      category_id:
+        categoryId(blank(row.category), input.categories) ??
+        categoryId(/BMS|电池|换电/.test(name) ? "电池" : /充电|控制器|电机/.test(name) ? "电气" : null, input.categories),
       details: detailsOf(row.details),
     });
   }

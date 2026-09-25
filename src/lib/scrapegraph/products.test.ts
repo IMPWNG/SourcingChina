@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, planSiteCrawl, productsFromPage, uniqueProducts } from "./products";
+import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, planSiteCrawl, productsFromPage, productsListedOnPage, uniqueProducts } from "./products";
 
 const categories = [
   { id: "helmets-id", slug: "helmets", name_en: "Helmets", name_zh: "头盔" },
   { id: "lighting-id", slug: "lighting", name_en: "Lighting", name_zh: "灯具" },
+  { id: "batteries-id", slug: "batteries", name_en: "Batteries", name_zh: "电池" },
+  { id: "electrical-id", slug: "electrical", name_en: "Electrical", name_zh: "电气" },
 ];
 
 test("upload crawl stays short enough to return the draft", () => {
@@ -53,4 +55,19 @@ test("product pages become records with images, descriptions, and a category", (
     categories,
   }).length, 0);
   assert.equal(uniqueProducts([...products, products[0]!]).length, 2);
+});
+
+test("product names printed on a supplier page are kept with a photo", () => {
+  const products = productsListedOnPage({
+    text: "首页 产品中心 电摩BMS 三电系统之间通过电池管理系统输出电能。 180W-3.3kw智能充电器",
+    imageUrls: ["//cdn.example/logo.png", "https://cdn.example/bms.jpg"],
+    pageUrl: "http://www.superpowertech.com/h-col-193.html",
+    siteHost: "www.superpowertech.com",
+    categories,
+  });
+  assert.equal(products.some((item) => item.name === "电摩BMS"), true);
+  assert.equal(products.find((item) => item.name === "电摩BMS")?.category_id, "batteries-id");
+  assert.match(products.find((item) => item.name === "电摩BMS")?.description ?? "", /电池管理系统/);
+  assert.equal(products.find((item) => item.name === "电摩BMS")?.image_url, "https://cdn.example/bms.jpg");
+  assert.equal(products.some((item) => item.name === "180W-3.3kw智能充电器"), true);
 });

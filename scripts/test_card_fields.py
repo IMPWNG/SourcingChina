@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.card_fields import apply_model_fields, classify_locally, printed_email
+from scripts.card_fields import apply_model_fields, classify_locally, prepare_ocr_text, printed_email
 from scripts.read_cards import choose_engine, score_vision
 
 SUPER = """SuperPower
@@ -84,8 +84,13 @@ class CardFieldsTest(unittest.TestCase):
         self.assertEqual(fields["phone"], "18068009705")
         self.assertIn("金浦路11号", fields["address"])
         self.assertIn("凤北荡路168号", fields["address"])
-        self.assertIn("dingtalk.com", fields["email"])
+        self.assertEqual(fields["email"], "sales05@dingtalk.com")
         self.assertEqual(fields["website"], None)
+        misread = SUPER.replace("邵春雨", "部春雨")
+        corrected = apply_model_fields(classify_locally(misread), {"contact_name": "部春雨", "email": "salesa05@dingtalk.com"}, misread)
+        self.assertEqual(corrected["contact_name"], "邵春雨")
+        self.assertEqual(prepare_ocr_text("部长\n销售部"), "部长\n销售部")
+        self.assertEqual(apply_model_fields(classify_locally(YEEDA), {"email": "salesa05@dingtalk.com"}, YEEDA)["email"], "sales05@dingtalk.com")
 
 
 if __name__ == "__main__":

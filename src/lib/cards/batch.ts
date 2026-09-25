@@ -13,6 +13,7 @@ export type CardCompanyRecord = {
   province: string | null;
   country: string;
   website: string | null;
+  websites?: string[];
   wechat: string | null;
   phone: string | null;
   email: string | null;
@@ -109,6 +110,7 @@ function companyOf(value: unknown): CardCompanyRecord | null {
     province: blank(record.province),
     country: blank(record.country) ?? "CN",
     website: blank(record.website),
+    websites: stringList(record.websites),
     wechat: blank(record.wechat),
     phone: blank(record.phone),
     email: blank(record.email),

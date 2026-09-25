@@ -92,10 +92,34 @@ def websites_in(text: str) -> list[str]:
     return found
 
 
+STRAY_MAILBOX_A = re.compile(
+    r"([A-Za-z]{3,}s)a(\d{2,}@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})",
+    flags=re.IGNORECASE,
+)
+
+
+def prepare_ocr_text(text: str) -> str:
+    """Fix two systematic misreads before fields are taken from the photo text.
+
+    A contact icon beside an address is often read as a stray ``a`` between a
+    word ending in ``s`` and the mailbox digits (``salesa05@`` is ``sales05@``).
+    The surname 邵 is often read as 部 when it is a person's name.
+    """
+    cleaned = STRAY_MAILBOX_A.sub(r"\1\2", text)
+
+    def surname(match: re.Match[str]) -> str:
+        given = match.group(1)
+        if given[0] in "长门署委队分":
+            return match.group(0)
+        return f"邵{given}"
+
+    return re.sub(r"(?<![\u4e00-\u9fff])部([\u4e00-\u9fff]{1,2})(?![\u4e00-\u9fff])", surname, cleaned)
+
+
 def emails_in(text: str) -> list[str]:
     found: list[str] = []
-    for match in EMAIL_RE.findall(text):
-        if printed_email(match, text) and match not in found:
+    for match in EMAIL_RE.findall(prepare_ocr_text(text)):
+        if printed_email(match, prepare_ocr_text(text)) and match not in found:
             found.append(match)
     return found
 
@@ -208,6 +232,7 @@ def blank(value: Any) -> str | None:
 
 
 def classify_locally(text: str) -> dict[str, Any]:
+    text = prepare_ocr_text(text)
     rows = lines_of(text)
     name_zh = chinese_company(rows)
     name_en = english_company(rows)
@@ -276,6 +301,7 @@ def prefer_printed_company(local_value: str | None, model_value: str | None, tex
 
 
 def apply_model_fields(local: dict[str, Any], model: dict[str, Any] | None, text: str) -> dict[str, Any]:
+    text = prepare_ocr_text(text)
     fields = dict(local)
     if model:
         fields["name_zh"] = prefer_printed_company(blank(local.get("name_zh")), blank(model.get("name_zh")), text, COMPANY_ZH_RE)
@@ -332,6 +358,7 @@ def company_record(fields: dict[str, Any]) -> dict[str, Any]:
         "province": fields.get("province"),
         "country": fields.get("country") or "CN",
         "website": fields.get("website"),
+        "websites": fields.get("websites") or ([] if not fields.get("website") else [fields.get("website")]),
         "wechat": fields.get("wechat"),
         "phone": fields.get("phone"),
         "email": fields.get("email"),
