@@ -59,11 +59,7 @@ async function fetchDocument(url: string, timeoutMs: number): Promise<Response> 
   let lastError: unknown = null;
   for (const candidate of fetchCandidates(url)) {
     try {
-      const response = await fetch(candidate, {
-        headers: { "User-Agent": SCRAPER_UA, Accept: "text/html,text/plain" },
-        signal: AbortSignal.timeout(timeoutMs),
-        redirect: "follow",
-      });
+      const response = await readPage(candidate, timeoutMs);
       if (response.ok || response.status === 404) return response;
       last = response;
     } catch (error) {
@@ -72,6 +68,21 @@ async function fetchDocument(url: string, timeoutMs: number): Promise<Response> 
   }
   if (last) return last;
   throw lastError instanceof Error ? lastError : new Error("request_failed");
+}
+
+/** Some supplier sites answer with a script that sets jsKey, then reload. */
+async function readPage(url: string, timeoutMs: number, cookie?: string): Promise<Response> {
+  const headers: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (compatible; SourcingChina/1.0)",
+    Accept: "text/html,text/plain",
+  };
+  if (cookie) headers.Cookie = cookie;
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: "follow" });
+  if (!response.ok) return response;
+  const html = await response.text();
+  const key = html.match(/document\.cookie="(jsKey=[^;"]+)/);
+  if (key && !cookie) return readPage(url, timeoutMs, key[1]);
+  return new Response(html, { status: response.status, headers: response.headers });
 }
 
 async function allowed(url: string): Promise<boolean> {
@@ -121,7 +132,7 @@ async function collectPages(start: string, deadline: number): Promise<SitePage[]
       }
     });
     $("script,style,noscript").remove();
-    const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 6000);
+    const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 20_000);
     if (text.length >= 40) pages.push({ url: finalUrl, text, images: [...images].slice(0, 24) });
     if (next.depth >= PRODUCT_DEPTH) continue;
     const productLinks: { url: string; depth: number }[] = [];
@@ -219,7 +230,7 @@ export async function scrapeSiteProducts(
       const fallback = listedByName.get(product.name);
       return [{ ...product, description: verbatim ?? fallback?.description ?? null }];
     });
-    const products: ScrapedProduct[] = uniqueProducts(grounded.length ? grounded : listed);
+    const products: ScrapedProduct[] = uniqueProducts([...listed, ...grounded]);
     return { reason: products.length ? "saved" : "empty", products };
   } catch (error) {
     const message = error instanceof Error ? error.message : "request_failed";

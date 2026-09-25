@@ -79,4 +79,12 @@ test("product names printed on a supplier page are kept with a photo", () => {
   });
   assert.equal(charger[0]?.name, "180W-3.3kw智能充电器");
   assert.equal(charger[0]?.description, null);
+  const about = productsListedOnPage({
+    text: "智能BMS 惠州超力源在三电控制领域深耕发展，产品涵盖充电器、BMS、电机控制器等，拥有各类发明专利90余项。",
+    imageUrls: [],
+    pageUrl: "http://www.superpowertech.com/h-col-193.html",
+    siteHost: "www.superpowertech.com",
+    categories,
+  });
+  assert.equal(about.find((item) => item.name === "智能BMS")?.description, null);
 });

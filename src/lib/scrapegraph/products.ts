@@ -71,7 +71,14 @@ function absoluteHttp(value: string | null, base: string): string | null {
   }
 }
 
-const PRODUCTISH = /BMS|充电器|控制器|电池|电机|头盔|灯具|灯/;
+const PRODUCTISH = /BMS|充电器|控制器|电池|电机|头盔|灯具|灯|换电/;
+const ABOUT = /成立于|高新技术|专精特新|专利|深耕|请输入要描述|是国内|头部企业|集成商|投入使用|founded in|high-tech|patents/i;
+
+function isProductName(name: string): boolean {
+  if (name.length < 4 || name.length > 40 || LISTED_NAV.test(name) || !PRODUCTISH.test(name)) return false;
+  if (/[，。！？、；：]/.test(name) || ABOUT.test(name) || /超力源|运营/.test(name)) return false;
+  return true;
+}
 const LISTED_NAV = /^(首页|关于我们|产品中心|解决方案|新闻资讯|联系我们|了解更多|注册|登录|产品|products?)$/i;
 const NAV_MARK = /首页|关于我们|关于|新闻|联系我们|注册|登录|荣誉|资质|企业文化|发展历程|常见问题|资料下载|合作伙伴|校企|产品中心|解决方案|About us|Register|Login|News|Our advantages/gi;
 
@@ -83,6 +90,7 @@ export function productDescription(afterName: string): string | null {
   if (sentence.length < 12) return null;
   const marks = sentence.match(NAV_MARK);
   if (marks && marks.length >= 2) return null;
+  if (ABOUT.test(sentence)) return null;
   return sentence.slice(0, 600);
 }
 
@@ -108,11 +116,16 @@ export function productsListedOnPage(input: {
   const names: string[] = [];
   for (const token of input.text.split(/\s+/)) {
     const name = token.replace(/^[|｜,，;；:：]+|[|｜,，;；:：]+$/g, "");
-    if (name.length < 4 || name.length > 40 || LISTED_NAV.test(name) || !PRODUCTISH.test(name)) continue;
+    if (!isProductName(name)) continue;
     if (!names.includes(name)) names.push(name);
   }
-  return names.slice(0, 12).map((name, index) => {
-    const at = input.text.indexOf(name);
+  for (const match of input.text.matchAll(/(?:^|[\s|｜])([A-Za-z0-9.+-]{0,16}[\u4e00-\u9fff]{0,20}(?:BMS|充电器|控制器|换电平台))/g)) {
+    const name = match[1].replace(/^[|｜,，;；:：/]+/, "");
+    if (!isProductName(name) || names.includes(name)) continue;
+    names.push(name);
+  }
+  const listed = names.map((name, index) => {
+    const at = input.text.lastIndexOf(name);
     const sentence = productDescription(at < 0 ? "" : input.text.slice(at + name.length));
     const category = /BMS|电池/.test(name) ? "电池" : /充电|控制器|电机/.test(name) ? "电气" : null;
     return {
@@ -124,6 +137,9 @@ export function productsListedOnPage(input: {
       details: {},
     };
   });
+  const described = listed.filter((item) => item.description);
+  const namedOnly = listed.filter((item) => !item.description);
+  return [...described, ...namedOnly].slice(0, 12);
 }
 
 function categoryId(
