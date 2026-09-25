@@ -13,6 +13,8 @@ import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { loadEnvLocal } from "./load-env";
 
 const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"]);
+/** A full card photo, including the Chinese model load, can outlast the short server limit. */
+const CARD_OCR_MS = 180_000;
 
 function companyFrom(extraction: CardExtraction): CardCompanyRecord {
   return {
@@ -70,7 +72,7 @@ async function readCard(file: string): Promise<CardRecord> {
     console.error(`${file}: ${message}`);
     return unreadCard(file, message);
   }
-  const ocr = await recognizeImage(prepared.bytes, prepared.mime);
+  const ocr = await recognizeImage(prepared.bytes, prepared.mime, CARD_OCR_MS);
   const ocrError =
     ocr.provider === "tesseract_error"
       ? "The photo could not be read."

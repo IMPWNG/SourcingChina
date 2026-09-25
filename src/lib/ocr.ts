@@ -107,17 +107,15 @@ export async function shutdownOcr(): Promise<void> {
 }
 
 /** Read a card photo with Tesseract (English + simplified Chinese). Never calls Google Vision. */
-export async function recognizeImage(bytes: Buffer, mime: string): Promise<CardOcr> {
+export async function recognizeImage(bytes: Buffer, mime: string, timeoutMs: number | null = OCR_MS): Promise<CardOcr> {
   try {
     assertWorkerModules();
-    const text = await withTimeout(
-      exclusive(async () => {
-        const worker = await getWorker();
-        const result = await worker.recognize(bytes);
-        return readableCardText(result.data.text);
-      }),
-      OCR_MS,
-    );
+    const task = exclusive(async () => {
+      const worker = await getWorker();
+      const result = await worker.recognize(bytes);
+      return readableCardText(result.data.text);
+    });
+    const text = timeoutMs == null ? await task : await withTimeout(task, timeoutMs);
     return { text, provider: "tesseract" };
   } catch (error) {
     const failed = workerPromise;

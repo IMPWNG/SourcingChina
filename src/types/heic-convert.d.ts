@@ -1,9 +1,13 @@
 declare module "heic-convert" {
   type HeicFormat = "JPEG" | "PNG";
-  function convert(options: {
+  type HeicOptions = {
     buffer: ArrayBuffer | ArrayBufferView;
     format: HeicFormat;
     quality?: number;
-  }): Promise<ArrayBuffer>;
+  };
+  function convert(options: HeicOptions): Promise<ArrayBuffer>;
+  namespace convert {
+    function all(options: HeicOptions): Promise<Array<{ convert: () => Promise<ArrayBuffer> }>>;
+  }
   export default convert;
 }
