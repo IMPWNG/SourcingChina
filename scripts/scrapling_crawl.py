@@ -17,6 +17,20 @@ def host_of(url: str) -> str:
     return urlparse(url).netloc.lower().removeprefix("www.")
 
 
+def candidates(url: str) -> list[str]:
+    parsed = urlparse(url)
+    host = parsed.netloc
+    hosts = [host, host[4:]] if host.lower().startswith("www.") else [host, f"www.{host}"]
+    protocols = ["http", "https"] if parsed.scheme == "http" else ["https", "http"]
+    out: list[str] = []
+    for next_host in hosts:
+        for protocol in protocols:
+            next_url = parsed._replace(scheme=protocol, netloc=next_host).geturl()
+            if next_url not in out:
+                out.append(next_url)
+    return out
+
+
 def page_html(page) -> str:
     raw = getattr(page, "html_content", None)
     if raw is None:
@@ -26,16 +40,32 @@ def page_html(page) -> str:
 
 
 def read_page(session, url: str, timeout: float):
-    page = session.get(url, timeout=timeout, impersonate="chrome", stealthy_headers=True)
-    html = page_html(page)
-    match = JS_KEY.search(html)
-    if match:
-        key, value = match.group(1).split("=", 1)
-        page = session.get(url, timeout=timeout, impersonate="chrome", stealthy_headers=True, cookies={key: value})
-        html = page_html(page)
-    status = int(getattr(page, "status", 0) or 0)
-    final = str(getattr(page, "url", None) or url)
-    return status, final, html
+    last_error = None
+    for candidate in candidates(url):
+        try:
+            page = session.get(candidate, timeout=timeout, impersonate="chrome", stealthy_headers=True)
+            html = page_html(page)
+            match = JS_KEY.search(html)
+            if match:
+                key, value = match.group(1).split("=", 1)
+                page = session.get(
+                    candidate,
+                    timeout=timeout,
+                    impersonate="chrome",
+                    stealthy_headers=True,
+                    cookies={key: value},
+                )
+                html = page_html(page)
+            status = int(getattr(page, "status", 0) or 0)
+            final = str(getattr(page, "url", None) or candidate)
+            if 200 <= status < 400:
+                return status, final, html
+        except Exception as error:
+            last_error = error
+            continue
+    if last_error:
+        raise last_error
+    return 0, url, ""
 
 
 def links_from(html: str, final_url: str, origin: str, depth: int):
