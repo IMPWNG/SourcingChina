@@ -14,6 +14,7 @@ export type ExtractedPage = {
   families: { name: string; description: string }[];
   certifications: string[];
   factories: { name: string; address: string | null; city: string | null }[];
+  contacts: { name: string; title: string | null; phone: string | null; email: string | null }[];
   excerpt: string;
   links: { href: string; label: string }[];
 };
@@ -81,6 +82,20 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
   if (factoryName && address) {
     factories.push({ name: factoryName, address, city });
   }
+  const contactAt = text.lastIndexOf("联系我们");
+  const contactBlock = contactAt >= 0 ? text.slice(contactAt, contactAt + 420) : "";
+  if (contactBlock && !/请输入要描述/.test(contactBlock)) {
+    for (const match of contactBlock.matchAll(/(惠州|无锡|深圳)\s*[:：]\s*([^。|]{8,90}?)(?=\s*(?:惠州|无锡|深圳)\s*[:：]|电话|邮箱|$)/g)) {
+      const place = match[1];
+      const line = clean(match[2]);
+      if (factories.some((item) => item.address === line)) continue;
+      factories.push({ name: `${place} office`, address: line, city: place });
+    }
+  }
+  const labeledPhone = contactBlock.match(/电话\s*[:：]\s*(0\d{2,3}-\d{7,8})/)?.[1] ?? null;
+  const labeledEmail = contactBlock.match(/邮箱\s*[:：]\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1] ?? null;
+  const contacts: ExtractedPage["contacts"] =
+    labeledPhone || labeledEmail ? [{ name: "Office", title: null, phone: labeledPhone, email: labeledEmail }] : [];
 
   return {
     phone: phones[0]?.trim() ?? null,
@@ -94,6 +109,7 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
     families,
     certifications: certs,
     factories,
+    contacts,
     excerpt: text.slice(0, 2000),
     links,
   };

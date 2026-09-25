@@ -13,6 +13,13 @@ test("fixture page yields families and certs without prices or SKUs", () => {
   assert.ok(extracted.certifications.includes("CE"));
   assert.ok(extracted.certifications.includes("ISO9001"));
   assert.equal(extracted.email, "hello@liangjiang-apparel.example");
+  const office = extractFromHtml(
+    "<html><body><p>联系我们 惠州： 惠州市仲恺高新区黄屋路1号超力源科技园 无锡： 无锡市新吴区震泽路18-17号 电话：0752-2318598 邮箱：sp@superpowertech.com</p></body></html>",
+    "http://www.superpowertech.com/h-col-185.html",
+  );
+  assert.equal(office.contacts[0]?.phone, "0752-2318598");
+  assert.equal(office.contacts[0]?.email, "sp@superpowertech.com");
+  assert.equal(office.factories.some((item) => item.city === "无锡"), true);
   assert.equal("sku" in extracted, false);
   assert.equal(extracted.families.some((family) => /sku|price|\$|€/i.test(family.name)), false);
 });

@@ -33,6 +33,9 @@ function merged(pages: CrawlResult["pages"]) {
     families: uniqueFamilies,
     certifications: certs,
     factories: pages.flatMap((page) => page.extracted.factories),
+    contacts: pages.flatMap((page) => page.extracted.contacts).filter(
+      (contact, index, all) => all.findIndex((item) => item.phone === contact.phone && item.email === contact.email) === index,
+    ),
     excerpt: pages.map((page) => page.extracted.excerpt).join("\n").slice(0, 4000),
   };
 }
@@ -108,8 +111,17 @@ export async function crawlWebsite(website: string, fetchImpl: FetchLike = fetch
       });
       const type = response.headers.get("content-type") ?? "";
       if (!response.ok || !type.includes("html")) continue;
-      const html = await readLimited(response);
-      if (!html.trim()) continue;
+      let html = await readLimited(response);
+      const gate = html.match(/document\.cookie="(jsKey=[^;"]+)/);
+      if (gate) {
+        const opened = await fetchImpl(url, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; SourcingChina/1.0)", Accept: "text/html", Cookie: gate[1] },
+          signal: AbortSignal.timeout(8000),
+          redirect: "follow",
+        });
+        if (opened.ok) html = await readLimited(opened);
+      }
+      if (!html.trim() || html.includes('document.cookie="jsKey=')) continue;
       const extracted = extractFromHtml(html, url);
       pages.push({ url, extracted });
       for (const link of extracted.links) {

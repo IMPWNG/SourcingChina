@@ -291,6 +291,7 @@ export async function runScrape(formData: FormData) {
       families: result.patch.families,
       certifications: result.patch.certifications,
       factories: result.patch.factories,
+      contacts: result.patch.contacts,
       category_slugs,
     },
     error: null,

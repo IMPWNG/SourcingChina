@@ -98,7 +98,7 @@ export function contentImageUrls(urls: string[], pageUrl: string): string[] {
   const images: string[] = [];
   for (const raw of urls) {
     const url = absoluteHttp(raw, pageUrl);
-    if (!url || /logo|icon|sprite|placeholder|richdefault/i.test(url)) continue;
+    if (!url || /logo|icon|sprite|placeholder|richdefault|wechat|weixin|facebook|youtube|douyin|qrcode|favicon/i.test(url)) continue;
     if (!images.includes(url)) images.push(url);
   }
   return images;
@@ -112,7 +112,6 @@ export function productsListedOnPage(input: {
   categories: { id: string; slug: string; name_en: string; name_zh: string | null }[];
 }): ScrapedProduct[] {
   if (!sameSite(input.pageUrl, input.siteHost)) return [];
-  const photos = contentImageUrls(input.imageUrls, input.pageUrl);
   const names: string[] = [];
   for (const token of input.text.split(/\s+/)) {
     const name = token.replace(/^[|｜,，;；:：]+|[|｜,，;；:：]+$/g, "");
@@ -124,14 +123,14 @@ export function productsListedOnPage(input: {
     if (!isProductName(name) || names.includes(name)) continue;
     names.push(name);
   }
-  const listed = names.map((name, index) => {
+  const listed = names.map((name) => {
     const at = input.text.lastIndexOf(name);
     const sentence = productDescription(at < 0 ? "" : input.text.slice(at + name.length));
     const category = /BMS|电池/.test(name) ? "电池" : /充电|控制器|电机/.test(name) ? "电气" : null;
     return {
       name,
       description: sentence,
-      image_url: photos.length ? photos[index % photos.length] ?? null : null,
+      image_url: null,
       source_url: input.pageUrl,
       category_id: categoryId(category, input.categories),
       details: {},

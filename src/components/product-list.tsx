@@ -22,11 +22,16 @@ export function ProductList({
         const details = Object.entries(product.details).filter(([key]) => !HIDDEN_DETAIL_KEYS.has(key));
         return (
           <li key={product.id} className="flex gap-3 text-sm">
-            {product.image_url ? (
+            {product.image_url && !/logo|icon|wechat|weixin|facebook|youtube|douyin|qrcode/i.test(product.image_url) ? (
               // Supplier photos live on arbitrary hosts, so they are not run through the image optimizer.
               // eslint-disable-next-line @next/next/no-img-element
               <img src={product.image_url} alt={name} width={80} height={80} loading="lazy" decoding="async" className="h-20 w-20 shrink-0 rounded-md object-cover" />
-            ) : null}
+            ) : (
+              <svg viewBox="0 0 80 80" className="h-20 w-20 shrink-0 rounded-md bg-muted text-muted-foreground" aria-hidden="true">
+                <rect x="22" y="28" width="36" height="26" rx="3" fill="none" stroke="currentColor" strokeWidth="2" />
+                <path d="M22 36h36M32 28v-4h16v4" fill="none" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            )}
             <div className="min-w-0 space-y-1">
               <p className="font-medium">{name}</p>
               {category ? <p className="text-xs text-muted-foreground">{categoryLabel(category.slug, locale, category.name_en)}</p> : null}

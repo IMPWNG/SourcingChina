@@ -530,6 +530,7 @@ export const demoStore = {
         families?: { name: string; description: string }[];
         certifications?: string[];
         factories?: { name: string; address: string | null; city: string | null }[];
+        contacts?: { name: string; title: string | null; phone: string | null; email: string | null }[];
         category_slugs?: string[];
       };
       const filled = fillEmptyFields(company, patch, false);
@@ -555,6 +556,10 @@ export const demoStore = {
       }
       for (const factory of patch.factories ?? []) {
         db.factories.push({ id: randomUUID(), company_id: company.id, ...factory });
+      }
+      for (const contact of patch.contacts ?? []) {
+        if (db.contacts.some((item) => item.company_id === company.id && item.phone === contact.phone && item.email === contact.email)) continue;
+        db.contacts.push({ id: randomUUID(), company_id: company.id, ...contact, is_public: false });
       }
       job.status = "applied";
       return company;

@@ -342,6 +342,7 @@ export const supabaseStore = {
       families?: { name: string; description: string }[];
       certifications?: string[];
       factories?: { name: string; address: string | null; city: string | null }[];
+      contacts?: { name: string; title: string | null; phone: string | null; email: string | null }[];
       category_slugs?: string[];
     };
     const filled = fillEmptyFields(company, patch, false);
@@ -361,6 +362,10 @@ export const supabaseStore = {
       if (!company.certifications.some((item) => item.code.toLowerCase() === code.toLowerCase())) await this.addCert(company.id, code);
     }
     for (const factory of patch.factories ?? []) await this.addFactory(company.id, factory);
+    for (const contact of patch.contacts ?? []) {
+      if (company.contacts.some((item) => item.phone === contact.phone && item.email === contact.email)) continue;
+      await this.addContact(company.id, { ...contact, is_public: false });
+    }
     fail((await supabase.from("scrape_jobs").update({ status: "applied" }).eq("id", jobId)).error);
     return company;
   },
