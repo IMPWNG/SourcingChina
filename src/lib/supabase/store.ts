@@ -253,6 +253,14 @@ export const supabaseStore = {
     fail(notes.error);
     return asCompany(data as Row, draft.category_ids ?? []);
   },
+  async deleteCompany(id: string) {
+    const supabase = await createClient();
+    const detached = await supabase.from("companies").update({ merged_into_id: null }).eq("merged_into_id", id);
+    fail(detached.error);
+    const { data, error } = await supabase.from("companies").delete().eq("id", id).select("id").maybeSingle();
+    fail(error);
+    if (!data) throw new Error("The company could not be deleted.");
+  },
   async setPublished(id: string, isPublished: boolean) {
     const supabase = await createClient();
     const { data, error } = await supabase.from("companies").update({ is_published: isPublished }).eq("id", id).select("id").maybeSingle();

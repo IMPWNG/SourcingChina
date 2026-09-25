@@ -437,6 +437,21 @@ export const demoStore = {
       return family;
     });
   },
+  deleteCompany(id: string) {
+    return update((db) => {
+      db.companies = db.companies
+        .filter((item) => item.id !== id)
+        .map((item) => (item.merged_into_id === id ? { ...item, merged_into_id: null } : item));
+      delete db.notes[id];
+      db.families = db.families.filter((item) => item.company_id !== id);
+      db.products = db.products.filter((item) => item.company_id !== id);
+      db.certifications = db.certifications.filter((item) => item.company_id !== id);
+      db.factories = db.factories.filter((item) => item.company_id !== id);
+      db.contacts = db.contacts.filter((item) => item.company_id !== id);
+      db.sources = db.sources.filter((item) => item.company_id !== id);
+      db.jobs = db.jobs.filter((item) => item.company_id !== id);
+    });
+  },
   deleteFamily(id: string) {
     return update((db) => {
       db.families = db.families.filter((item) => item.id !== id);
