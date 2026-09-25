@@ -29,6 +29,7 @@ function asCompany(row: Row, categoryIds: string[] = []): Company {
     country: String(row.country ?? "CN"),
     website: (row.website as string | null) ?? null,
     wechat: (row.wechat as string | null) ?? null,
+    wechat_qr_url: (row.wechat_qr_url as string | null) ?? null,
     phone: (row.phone as string | null) ?? null,
     email: (row.email as string | null) ?? null,
     export_markets: Array.isArray(row.export_markets) ? (row.export_markets as string[]) : [],
@@ -116,6 +117,32 @@ async function relations(supabase: SupabaseClient, companyId: string, publicCont
   };
 }
 
+async function wechatQrUrl(companyId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const found = await supabase.from("sources").select("url_or_ref").eq("company_id", companyId).contains("payload", { kind: "wechat_qr" }).limit(1);
+  const stored = found.data?.[0]?.url_or_ref ?? null;
+  if (!stored) return null;
+  if (stored.startsWith("/")) return stored;
+  const service = createServiceClient();
+  if (!service) return null;
+  const signed = await service.storage.from("card-images").createSignedUrl(stored, 60 * 60);
+  return signed.data?.signedUrl ?? null;
+}
+
+async function saveWechatQr(supabase: SupabaseClient, companyId: string, path: string | null): Promise<void> {
+  const removed = await supabase.from("sources").delete().eq("company_id", companyId).contains("payload", { kind: "wechat_qr" });
+  fail(removed.error);
+  if (!path) return;
+  const inserted = await supabase.from("sources").insert({
+    company_id: companyId,
+    source_type: "website",
+    url_or_ref: path,
+    raw_text: null,
+    payload: { kind: "wechat_qr" },
+  });
+  fail(inserted.error);
+}
+
 function columnPatch(draft: CompanyDraft) {
   return {
     name_zh: draft.name_zh ?? null,
@@ -185,7 +212,9 @@ export const supabaseStore = {
     fail(error);
     if (!data) return null;
     const cats = await categoryMap(supabase, [id]);
-    return { ...asCompany(data as Row, cats.get(id) ?? []), ...(await relations(supabase, id, true)) };
+    const company = { ...asCompany(data as Row, cats.get(id) ?? []), ...(await relations(supabase, id, true)) };
+    company.wechat_qr_url = await wechatQrUrl(id);
+    return company;
   },
   async adminList(status: "all" | "draft" | "published") {
     const supabase = await createClient();
@@ -213,8 +242,10 @@ export const supabaseStore = {
     fail(sources.error);
     fail(jobs.error);
     fail(notes.error);
+    const company = asCompany(data as Row, cats.get(id) ?? []);
+    company.wechat_qr_url = await wechatQrUrl(id);
     return {
-      ...asCompany(data as Row, cats.get(id) ?? []),
+      ...company,
       ...related,
       notes: (notes.data as string | null) ?? null,
       sources: sources.data ?? [],
@@ -249,6 +280,7 @@ export const supabaseStore = {
     fail(error);
     if (!data) return null;
     if (draft.category_ids) await replaceCategories(supabase, id, draft.category_ids);
+    if (draft.wechat_qr_url !== undefined) await saveWechatQr(supabase, id, draft.wechat_qr_url);
     const notes = await supabase.rpc("set_company_notes", { company: id, body: draft.notes ?? "" });
     fail(notes.error);
     return asCompany(data as Row, draft.category_ids ?? []);
@@ -482,6 +514,12 @@ export const supabaseStore = {
   async uploadCard(path: string, bytes: Buffer, contentType: string) {
     const supabase = await createClient();
     const { error } = await supabase.storage.from("card-images").upload(path, bytes, { contentType, upsert: false });
+    fail(error);
+    return path;
+  },
+  async uploadWechatQr(path: string, bytes: Buffer, contentType: string) {
+    const supabase = await createClient();
+    const { error } = await supabase.storage.from("card-images").upload(path, bytes, { contentType, upsert: true });
     fail(error);
     return path;
   },

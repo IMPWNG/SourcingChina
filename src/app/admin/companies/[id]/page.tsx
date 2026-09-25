@@ -141,6 +141,20 @@ export default async function AdminCompanyPage({
             <Pair label="Country" name="country" value={company.country} />
             <Pair label="Website" name="website" value={company.website} />
             <Pair label="WeChat" name="wechat" value={company.wechat} />
+            <div className="space-y-2">
+              <Label htmlFor="wechat_qr">WeChat QR code</Label>
+              {company.wechat_qr_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={company.wechat_qr_url} alt="WeChat QR code" width={96} height={96} className="h-24 w-24 rounded-md border object-contain" />
+              ) : null}
+              <input id="wechat_qr" name="wechat_qr" type="file" accept="image/jpeg,image/png,image/webp" className="block text-sm" />
+              {company.wechat_qr_url ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="clear_wechat_qr" />
+                  Remove QR code
+                </label>
+              ) : null}
+            </div>
             <Pair label="Phone" name="phone" value={company.phone} />
             <Pair label="Email" name="email" value={company.email} />
             <Pair label="Export markets" name="export_markets" value={company.export_markets.join(", ")} />
@@ -302,8 +316,8 @@ export default async function AdminCompanyPage({
           <CardTitle>Sources</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          {company.sources.length === 0 ? <p className="text-muted-foreground">No card or website source yet.</p> : null}
-          {company.sources.map((source) => (
+          {company.sources.filter((source) => source.payload.kind !== "wechat_qr").length === 0 ? <p className="text-muted-foreground">No card or website source yet.</p> : null}
+          {company.sources.filter((source) => source.payload.kind !== "wechat_qr").map((source) => (
             <details key={source.id} className="rounded-lg border border-border p-3">
               <summary className="cursor-pointer">
                 {source.source_type} · {source.url_or_ref || "no file"} · {new Date(source.captured_at).toLocaleString()}

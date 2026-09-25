@@ -17,6 +17,7 @@ function company(id: string, name: string): Company {
     country: "CN",
     website: null,
     wechat: null,
+    wechat_qr_url: null,
     phone: null,
     email: null,
     export_markets: [],

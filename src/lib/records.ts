@@ -63,6 +63,7 @@ export type Company = {
   country: string;
   website: string | null;
   wechat: string | null;
+  wechat_qr_url: string | null;
   phone: string | null;
   email: string | null;
   export_markets: string[];
@@ -86,6 +87,7 @@ export type CompanyDraft = {
   country?: string | null;
   website?: string | null;
   wechat?: string | null;
+  wechat_qr_url?: string | null;
   phone?: string | null;
   email?: string | null;
   export_markets?: string[];

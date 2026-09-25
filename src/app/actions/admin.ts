@@ -15,6 +15,7 @@ import { recognizeImage } from "@/lib/ocr";
 import { scrapeSiteProducts, type ProductCrawlResult } from "@/lib/scrapegraph/catalog";
 import { extractCardWithScrapeGraph, type ScrapeGraphCardResult } from "@/lib/scrapegraph/extract";
 import { UPLOAD_PRODUCT_CRAWL_MS, type CatalogReason } from "@/lib/scrapegraph/products";
+import type { CompanyDraft } from "@/lib/records";
 import { directory } from "@/lib/store";
 import { supabaseStore } from "@/lib/supabase/store";
 import {
@@ -29,7 +30,7 @@ import {
   parseMarkets,
 } from "@/lib/validation";
 
-function draftFromForm(formData: FormData) {
+function draftFromForm(formData: FormData): CompanyDraft {
   const parsed = companySchema.safeParse({
     name_zh: formData.get("name_zh") ?? "",
     name_en: formData.get("name_en") ?? "",
@@ -62,6 +63,7 @@ function draftFromForm(formData: FormData) {
     country: parsed.data.country || "CN",
     website: emptyToNull(parsed.data.website),
     wechat: emptyToNull(parsed.data.wechat),
+    wechat_qr_url: undefined,
     phone: emptyToNull(parsed.data.phone),
     email: emptyToNull(parsed.data.email),
     export_markets: parseMarkets(parsed.data.export_markets),
@@ -80,7 +82,10 @@ export async function createCompany(formData: FormData) {
 export async function updateCompany(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
-  await directory.updateCompany(id, draftFromForm(formData));
+  const draft = draftFromForm(formData);
+  const qr = await readWechatQr(id, formData);
+  if (qr !== undefined) draft.wechat_qr_url = qr;
+  await directory.updateCompany(id, draft);
   revalidatePath(`/admin/companies/${id}`);
   revalidatePath("/directory");
   redirect(`/admin/companies/${id}?saved=1`);
@@ -333,6 +338,24 @@ async function structureCard(text: string): Promise<ScrapeGraphCardResult> {
     logInfo("mammouth_card_threw", { error: errorText(error) });
     return { attempted: true, extraction: null, rawText: text, error: "extract_failed" };
   }
+}
+
+async function readWechatQr(companyId: string, formData: FormData): Promise<string | null | undefined> {
+  if (formData.get("clear_wechat_qr") === "on") return null;
+  const file = formData.get("wechat_qr");
+  if (!(file instanceof File) || file.size === 0) return undefined;
+  if (file.size > 2_000_000) return undefined;
+  const mime = file.type;
+  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/jpeg" ? "jpg" : null;
+  if (!ext) return undefined;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (isDemoMode()) {
+    const dir = path.join(process.cwd(), "public", "wechat-qr");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, `${companyId}.${ext}`), bytes);
+    return `/wechat-qr/${companyId}.${ext}`;
+  }
+  return supabaseStore.uploadWechatQr(`wechat-qr/${companyId}.${ext}`, bytes, mime);
 }
 
 async function storeCardImage(id: string, ext: string, bytes: Buffer, mime: string): Promise<string | null> {

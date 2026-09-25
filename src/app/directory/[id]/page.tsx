@@ -59,6 +59,10 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
           <p>{t.phone}: {company.phone || t.notOnFile}</p>
           <p>{t.email}: {company.email || t.notOnFile}</p>
           <p>{t.wechat}: {company.wechat || t.notOnFile}</p>
+          {company.wechat_qr_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={company.wechat_qr_url} alt={t.wechatQr} width={128} height={128} className="h-32 w-32 rounded-md border object-contain" />
+          ) : null}
           <p>
             {t.website}:{" "}
             {website ? (
