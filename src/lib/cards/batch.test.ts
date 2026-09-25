@@ -33,6 +33,11 @@ test("a website, phone, or email is kept only when the photo text contains it", 
   assert.equal(kept.website, "https://apexride.example");
   assert.equal(kept.phone, "+86 13800002210");
   assert.equal(kept.email, null);
+  assert.equal(keepPrintedContacts({ ...company, email: "shao@superpowertech.com" }, "cyshao@superpowertech.com").email, null);
+  assert.equal(
+    keepPrintedContacts({ ...company, email: "cyshao@superpowertech.com" }, "cyshao@superpowertech.com").email,
+    "cyshao@superpowertech.com",
+  );
   assert.equal(keepPrintedContacts(company, "").website, null);
   assert.equal(keepPrintedContacts(company, null).phone, null);
 });

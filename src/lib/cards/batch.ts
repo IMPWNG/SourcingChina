@@ -173,8 +173,18 @@ export function keepPrintedContacts(company: CardCompanyRecord, ocrText: string 
 }
 
 function printedEmail(email: string | null, text: string): string | null {
-  if (!email || !text.toLowerCase().includes(email.toLowerCase())) return null;
-  return email;
+  if (!email) return null;
+  const hay = text.toLowerCase();
+  const needle = email.toLowerCase();
+  let from = 0;
+  while (from <= hay.length) {
+    const at = hay.indexOf(needle, from);
+    if (at < 0) return null;
+    const before = at === 0 ? "" : hay[at - 1] ?? "";
+    if (!/[a-z0-9._%+-]/.test(before)) return email;
+    from = at + 1;
+  }
+  return null;
 }
 
 function printedPhone(phone: string | null, text: string): string | null {

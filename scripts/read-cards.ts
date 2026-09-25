@@ -4,7 +4,7 @@ import { keepPrintedContacts, parseCardArgs, type CardCompanyRecord, type CardRe
 import { cardImageForOcr } from "@/lib/cards/image";
 import type { CardExtraction } from "@/lib/domain";
 import { extractCard } from "@/lib/domain";
-import { recognizeImage, shutdownOcr } from "@/lib/ocr";
+import { openJpegForOcr, recognizeImage, shutdownOcr } from "@/lib/ocr";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { extractCardWithScrapeGraph } from "@/lib/scrapegraph/extract";
 import { mammouthConfig } from "@/lib/mammouth/client";
@@ -67,12 +67,18 @@ async function readCard(file: string): Promise<CardRecord> {
   let prepared: { bytes: Buffer; mime: string };
   try {
     prepared = await cardImageForOcr(original, ext);
+    if (prepared.mime === "image/jpeg") {
+      const opened = await openJpegForOcr(prepared.bytes);
+      const turned = opened.turns === 0 ? "" : `, rotated ${opened.turns * 90}° so the text is horizontal`;
+      console.error(`Decoded ${file} at ${opened.decodedWidth}×${opened.decodedHeight}${turned}`);
+      prepared = { bytes: opened.bytes, mime: "image/jpeg" };
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not convert this photo.";
     console.error(`${file}: ${message}`);
     return unreadCard(file, message);
   }
-  const ocr = await recognizeImage(prepared.bytes, prepared.mime, CARD_OCR_MS);
+  const ocr = await recognizeImage(prepared.bytes, prepared.mime, CARD_OCR_MS, { prepared: true });
   const ocrError =
     ocr.provider === "tesseract_error"
       ? "The photo could not be read."
