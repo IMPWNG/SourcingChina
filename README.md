@@ -53,7 +53,7 @@ npm run cards -- ./business-card --out cards.json
 The second command reads that JSON and upserts companies and products in Supabase. A matching website, or the Chinese and English names when there is no website, updates the existing row. New companies stay unpublished. If the Supabase URL or secret is missing, the command prints the variable names and exits.
 
 ```bash
-npm run cards -- ./business-cards --out cards.json
+npm run cards -- ./business-card --out cards.json
 npm run cards:import -- cards.json
 ```
 
