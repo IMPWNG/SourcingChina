@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cookies } from "next/headers";
 import { fillEmptyFields, findDuplicatePairs, normalizeWebsite, type CardExtraction } from "@/lib/domain";
+import { isCompanyId, matchCompanySlug } from "@/lib/company-slug";
 import { mergeCardDrafts, packCardDrafts, unpackCardDrafts, type CardDraftBundle } from "@/lib/demo/card-drafts";
 import { isDirectoryWritable, isReadOnlyFsError, shouldPersistDemoSeed } from "@/lib/demo/filesystem";
 import { hashPassword, verifyPassword } from "@/lib/demo/password";
@@ -333,9 +334,12 @@ export const demoStore = {
       .sort((a, b) => (a.name_en ?? "").localeCompare(b.name_en ?? ""))
       .map((company) => profileOf(company, db, true));
   },
-  async getPublished(id: string): Promise<DirectoryCompany | null> {
+  async getPublished(idOrSlug: string): Promise<DirectoryCompany | null> {
     const db = await readDb();
-    const company = db.companies.find((item) => item.id === id && item.is_published && !item.merged_into_id);
+    const published = db.companies.filter((item) => item.is_published && !item.merged_into_id);
+    const company = isCompanyId(idOrSlug)
+      ? published.find((item) => item.id === idOrSlug)
+      : matchCompanySlug(idOrSlug, published);
     return company ? profileOf(company, db, true) : null;
   },
   async adminList(status: "all" | "draft" | "published"): Promise<Company[]> {

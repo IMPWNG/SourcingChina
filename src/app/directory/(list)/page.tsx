@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DirectorySearch } from "@/components/directory-search";
+import { DirectoryShell } from "@/components/directory-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { companyDirectoryPath } from "@/lib/company-slug";
 import { getLocale, getMessages } from "@/lib/i18n-server";
 import { categoryLabel, companyTypeLabel } from "@/lib/i18n";
 import { directory } from "@/lib/store";
@@ -45,6 +47,7 @@ export default async function DirectoryPage({
   ]);
 
   return (
+    <DirectoryShell>
     <main className="mx-auto grid h-full max-w-6xl md:grid-cols-[260px_1fr]">
       <aside className="hidden h-full md:block">
         <div className="flex h-full items-center px-4">
@@ -80,7 +83,7 @@ export default async function DirectoryPage({
           <ul className="space-y-3">
             {companies.map((company) => (
               <li key={company.id}>
-                <Link href={`/directory/${company.id}`} className="block rounded-xl border border-border bg-card p-4 transition hover:bg-accent">
+                <Link href={companyDirectoryPath(company, companies)} className="block rounded-xl border border-border bg-card p-4 transition hover:bg-accent">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-medium">{title(company) || t.unnamed}</h2>
                     <Badge variant="outline">{companyTypeLabel(company.company_type, locale)}</Badge>
@@ -108,5 +111,6 @@ export default async function DirectoryPage({
       </section>
       </div>
     </main>
+    </DirectoryShell>
   );
 }

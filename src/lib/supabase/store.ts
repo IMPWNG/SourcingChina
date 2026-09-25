@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fillEmptyFields, findDuplicatePairs, normalizeWebsite, type CardExtraction } from "@/lib/domain";
+import { isCompanyId, matchCompanySlug } from "@/lib/company-slug";
 import type { CompanyDraft, Company, DirectoryFilters, Product } from "@/lib/records";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -215,8 +216,20 @@ export const supabaseStore = {
       cities: [...cities].sort(),
     };
   },
-  async getPublished(id: string) {
+  async getPublished(idOrSlug: string) {
     const supabase = await createClient();
+    let id = idOrSlug;
+    if (!isCompanyId(idOrSlug)) {
+      const listed = await supabase
+        .from("companies")
+        .select("id, name_en, name_zh, brand")
+        .eq("is_published", true)
+        .is("merged_into_id", null);
+      fail(listed.error);
+      const match = matchCompanySlug(idOrSlug, (listed.data ?? []) as { id: string; name_en: string | null; name_zh: string | null; brand: string | null }[]);
+      if (!match) return null;
+      id = match.id;
+    }
     const { data, error } = await supabase
       .from("companies")
       .select(COMPANY_COLUMNS)

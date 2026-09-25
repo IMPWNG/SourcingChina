@@ -1,37 +1,39 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductList } from "@/components/product-list";
+import { companyDirectoryPath, isCompanyId } from "@/lib/company-slug";
 import { getLocale, getMessages } from "@/lib/i18n-server";
 import { categoryLabel, companyTypeLabel, translated } from "@/lib/i18n";
 import { directory } from "@/lib/store";
 
-type Params = { id: string };
+type Params = { slug: string };
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
-  const { id } = await params;
-  const company = await directory.getPublished(id);
+  const { slug } = await params;
+  const company = await directory.getPublished(slug);
   return { title: company?.name_en || company?.name_zh || "Supplier" };
 }
 
 export default async function CompanyPage({ params }: { params: Promise<Params> }) {
-  const { id } = await params;
+  const { slug } = await params;
   const [company, categories, t, locale] = await Promise.all([
-    directory.getPublished(id),
+    directory.getPublished(slug),
     directory.listCategories(),
     getMessages(),
     getLocale(),
   ]);
   if (!company) notFound();
+  if (isCompanyId(slug)) permanentRedirect(companyDirectoryPath(company));
   const shared = company.products[0]?.details ?? {};
   const title = company.name_en || company.name_zh || company.brand || t.unnamed;
   const city = translated(shared, "city", locale, company.city);
   const website = company.website?.startsWith("fixture:") ? null : company.website;
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+    <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 pb-16">
       <p>
         <Link href="/directory" className="text-sm text-muted-foreground hover:text-foreground">
           {t.back}
