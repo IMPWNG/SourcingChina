@@ -130,6 +130,15 @@ export async function addFamily(formData: FormData) {
   redirect(`/admin/companies/${companyId}`);
 }
 
+export async function deleteCompany(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  await directory.deleteCompany(id);
+  revalidatePath("/admin/companies");
+  revalidatePath("/directory");
+  redirect("/admin/companies");
+}
+
 export async function deleteFamily(formData: FormData) {
   await requireAdmin();
   const companyId = String(formData.get("company_id") ?? "");

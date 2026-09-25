@@ -1,0 +1,13 @@
+---
+description: After each finished task, commit the work and push it to origin main
+alwaysApply: true
+---
+
+# Push to main when a task is done
+
+When a task is finished and the working tree has changes from that task:
+
+1. Commit those changes. Do not commit secrets (`.env`, credentials).
+2. Push to `origin main` with `git push`. Do not force-push.
+3. If the push fails with an HTTP 400 disconnect, retry once with `GIT_HTTP_VERSION=HTTP/1.1`.
+4. Leave unrelated uncommitted work out of the commit.

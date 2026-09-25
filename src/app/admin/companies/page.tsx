@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DeleteCompany } from "@/components/delete-company";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { directory } from "@/lib/store";
@@ -41,7 +42,10 @@ export default async function CompaniesPage({
                 </Link>
                 <p className="text-xs text-muted-foreground">{company.name_zh}</p>
               </div>
-              <Badge variant={company.is_published ? "default" : "secondary"}>{company.is_published ? "Published" : "Draft"}</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={company.is_published ? "default" : "secondary"}>{company.is_published ? "Published" : "Draft"}</Badge>
+                <DeleteCompany id={company.id} name={company.name_en || company.name_zh || "this card"} />
+              </div>
             </li>
           ))}
         </ul>

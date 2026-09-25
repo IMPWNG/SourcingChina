@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { DeleteCompany } from "@/components/delete-company";
 import { ProductList } from "@/components/product-list";
 import { catalogNotice } from "@/lib/scrapegraph/catalog-message";
 import { directory } from "@/lib/store";
@@ -62,9 +63,12 @@ export default async function AdminCompanyPage({
           All companies
         </Link>
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{company.name_en || company.name_zh || "Unnamed draft"}</h1>
-        <Badge variant={company.is_published ? "default" : "secondary"}>{company.is_published ? "Published" : "Draft"}</Badge>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{company.name_en || company.name_zh || "Unnamed draft"}</h1>
+          <Badge variant={company.is_published ? "default" : "secondary"}>{company.is_published ? "Published" : "Draft"}</Badge>
+        </div>
+        <DeleteCompany id={company.id} name={company.name_en || company.name_zh || "this card"} />
       </div>
       {mammouthFailed ? (
         <Alert variant="destructive">
