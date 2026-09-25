@@ -10,6 +10,7 @@ import {
   PRODUCT_DEPTH,
   PRODUCT_PAGE_LIMIT,
   planSiteCrawl,
+  productDescription,
   productsFromPage,
   productsListedOnPage,
   uniqueProducts,
@@ -214,7 +215,7 @@ export async function scrapeSiteProducts(
     const grounded = rows.flatMap((product) => {
       const page = pages.find((entry) => entry.url === product.source_url);
       if (!page || !page.text.includes(product.name)) return [];
-      const verbatim = product.description && page.text.includes(product.description) ? product.description : null;
+      const verbatim = product.description && page.text.includes(product.description) ? productDescription(product.description) : null;
       const fallback = listedByName.get(product.name);
       return [{ ...product, description: verbatim ?? fallback?.description ?? null }];
     });

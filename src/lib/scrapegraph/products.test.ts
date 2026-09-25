@@ -70,4 +70,13 @@ test("product names printed on a supplier page are kept with a photo", () => {
   assert.match(products.find((item) => item.name === "电摩BMS")?.description ?? "", /电池管理系统/);
   assert.equal(products.find((item) => item.name === "电摩BMS")?.image_url, "https://cdn.example/bms.jpg");
   assert.equal(products.some((item) => item.name === "180W-3.3kw智能充电器"), true);
+  const charger = productsListedOnPage({
+    text: "180W-3.3kw智能充电器 我们的优势 合作伙伴 校企合作 资质认证 制造中心 研发实力 | 新闻资讯 | 关于我们 公司介绍 荣誉资质 联系我们 企业文化 发展历程 常见问题 资料下载 注册 登录 中文 English 关于我们 惠州超力源成立于2014年，是国家级高新技术企业。",
+    imageUrls: [],
+    pageUrl: "http://www.superpowertech.com/h-col-193.html",
+    siteHost: "www.superpowertech.com",
+    categories,
+  });
+  assert.equal(charger[0]?.name, "180W-3.3kw智能充电器");
+  assert.equal(charger[0]?.description, null);
 });

@@ -73,6 +73,18 @@ function absoluteHttp(value: string | null, base: string): string | null {
 
 const PRODUCTISH = /BMS|充电器|控制器|电池|电机|头盔|灯具|灯/;
 const LISTED_NAV = /^(首页|关于我们|产品中心|解决方案|新闻资讯|联系我们|了解更多|注册|登录|产品|products?)$/i;
+const NAV_MARK = /首页|关于我们|关于|新闻|联系我们|注册|登录|荣誉|资质|企业文化|发展历程|常见问题|资料下载|合作伙伴|校企|产品中心|解决方案|About us|Register|Login|News|Our advantages/gi;
+
+/** A product blurb is the sentence after the name. Menu bars and company-about blocks are not a description. */
+export function productDescription(afterName: string): string | null {
+  const rest = afterName.replace(/^[\s|｜:：\-–—]+/, "");
+  const end = rest.search(/[。！？]/);
+  const sentence = (end >= 12 ? rest.slice(0, end + 1) : rest.slice(0, 180)).trim();
+  if (sentence.length < 12) return null;
+  const marks = sentence.match(NAV_MARK);
+  if (marks && marks.length >= 2) return null;
+  return sentence.slice(0, 600);
+}
 
 export function contentImageUrls(urls: string[], pageUrl: string): string[] {
   const images: string[] = [];
@@ -101,13 +113,11 @@ export function productsListedOnPage(input: {
   }
   return names.slice(0, 12).map((name, index) => {
     const at = input.text.indexOf(name);
-    const rest = at < 0 ? "" : input.text.slice(at + name.length).replace(/^[\s|｜:：\-–—]+/, "");
-    const end = rest.search(/[。！？]/);
-    const sentence = (end >= 12 ? rest.slice(0, end + 1) : "").trim();
+    const sentence = productDescription(at < 0 ? "" : input.text.slice(at + name.length));
     const category = /BMS|电池/.test(name) ? "电池" : /充电|控制器|电机/.test(name) ? "电气" : null;
     return {
       name,
-      description: sentence.length >= 12 ? sentence.slice(0, 600) : null,
+      description: sentence,
       image_url: photos.length ? photos[index % photos.length] ?? null : null,
       source_url: input.pageUrl,
       category_id: categoryId(category, input.categories),
