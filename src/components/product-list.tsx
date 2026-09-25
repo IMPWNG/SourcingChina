@@ -25,7 +25,7 @@ export function ProductList({
             {product.image_url ? (
               // Supplier photos live on arbitrary hosts, so they are not run through the image optimizer.
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.image_url} alt={name} className="h-20 w-20 shrink-0 rounded-md object-cover" />
+              <img src={product.image_url} alt={name} width={80} height={80} loading="lazy" decoding="async" className="h-20 w-20 shrink-0 rounded-md object-cover" />
             ) : null}
             <div className="min-w-0 space-y-1">
               <p className="font-medium">{name}</p>

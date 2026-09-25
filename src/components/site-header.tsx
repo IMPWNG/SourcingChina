@@ -25,31 +25,31 @@ export async function SiteHeader() {
           {t.demo}
         </p>
       ) : null}
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4">
         <Link href="/" className="font-semibold tracking-tight">
           SourcingChina
         </Link>
-        <div className="flex items-center gap-2">
-          <LocaleSwitch locale={locale} />
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-5 text-sm md:flex" aria-label="Main">
           {links.map((link) => (
-            <Button key={link.href} variant="ghost" asChild>
-              <Link href={link.href}>{link.label}</Link>
-            </Button>
+            <Link key={link.href} href={link.href} className="text-muted-foreground hover:text-foreground">
+              {link.label}
+            </Link>
           ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-3">
+          <LocaleSwitch locale={locale} />
           {user ? (
-            <form action={signOut}>
-              <Button type="submit" variant="outline">
+            <form action={signOut} className="hidden md:block">
+              <Button type="submit" variant="outline" size="sm">
                 {t.signOut}
               </Button>
             </form>
           ) : (
-            <Button asChild>
+            <Button size="sm" className="hidden md:inline-flex" asChild>
               <Link href="/signup">{t.createAccount}</Link>
             </Button>
           )}
-        </nav>
-        <MobileNav links={user ? links : [...links, { href: "/signup", label: t.createAccount }]} menuLabel={t.openMenu} />
+          <MobileNav links={user ? links : [...links, { href: "/signup", label: t.createAccount }]} menuLabel={t.openMenu} />
         </div>
       </div>
     </header>

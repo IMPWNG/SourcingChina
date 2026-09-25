@@ -8,8 +8,18 @@ import { CATEGORIES } from "@/lib/seed";
 
 export default async function HomePage() {
   const [t, locale] = await Promise.all([getMessages(), getLocale()]);
+  const faq = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: [
+      { "@type": "Question", name: t.q1, acceptedAnswer: { "@type": "Answer", text: t.a1 } },
+      { "@type": "Question", name: t.q2, acceptedAnswer: { "@type": "Answer", text: t.a2 } },
+      { "@type": "Question", name: t.q3, acceptedAnswer: { "@type": "Answer", text: t.a3 } },
+    ],
+  };
   return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faq) }} />
       <section className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-[1.3fr_0.7fr] md:py-24">
         <div className="space-y-6">
           <Badge variant="secondary">{t.badge}</Badge>
@@ -59,13 +69,30 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="mx-auto max-w-3xl px-4 py-14">
+        <h2 className="text-2xl font-semibold tracking-tight">{t.faqTitle}</h2>
+        <div className="mt-6 space-y-6 text-sm">
+          <div>
+            <h3 className="font-medium">{t.q1}</h3>
+            <p className="mt-2 text-muted-foreground">{t.a1}</p>
+          </div>
+          <div>
+            <h3 className="font-medium">{t.q2}</h3>
+            <p className="mt-2 text-muted-foreground">{t.a2}</p>
+          </div>
+          <div>
+            <h3 className="font-medium">{t.q3}</h3>
+            <p className="mt-2 text-muted-foreground">{t.a3}</p>
+          </div>
+        </div>
+      </section>
+
       <section className="mx-auto max-w-6xl px-4 py-14">
         <h2 className="text-2xl font-semibold tracking-tight">{t.families}</h2>
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {CATEGORIES.map((category) => (
             <div key={category.slug} className="rounded-lg border border-border bg-card px-3 py-3">
               <p className="text-sm font-medium">{categoryLabel(category.slug, locale, category.name_en)}</p>
-              <p className="text-xs text-muted-foreground">{category.name_zh}</p>
             </div>
           ))}
         </div>

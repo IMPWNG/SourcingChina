@@ -29,9 +29,13 @@ export async function translateCard(card: CardRecord): Promise<void> {
     system: SYSTEM,
     user: lines.map((line) => `${line.id}: ${line.text}`).join("\n"),
   });
-  if (!result.ok) return;
+  if (!result.ok) {
+    console.error(`translation skipped: ${result.error}`);
+    return;
+  }
   const record = result.json && typeof result.json === "object" ? (result.json as { items?: unknown }) : {};
   const items = Array.isArray(record.items) ? record.items : [];
+  if (!items.length) console.error("translation returned no items");
   const byId = new Map<string, { en: string; fr: string }>();
   for (const item of items) {
     const row = item as Item;

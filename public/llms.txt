@@ -1,0 +1,10 @@
+# SourcingChina
+
+SourcingChina is a reviewed reference directory of motorcycle-industry suppliers in China: factories, trading companies, and brands.
+
+Records come from a business card or the company website, then an editor publishes them. A record shows the legal name, contact channels on file, and products named on the company site. It does not show prices, stock, or SKUs.
+
+- Home: /
+- Access: /pricing
+
+The directory itself is for subscribers and is not a public catalog.
