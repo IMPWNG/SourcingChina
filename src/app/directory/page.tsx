@@ -4,7 +4,8 @@ import { DirectorySearch } from "@/components/directory-search";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { categoryLabel, companyTypeLabel, getLocale, getMessages } from "@/lib/i18n";
+import { getLocale, getMessages } from "@/lib/i18n-server";
+import { categoryLabel, companyTypeLabel } from "@/lib/i18n";
 import { directory } from "@/lib/store";
 import type { DirectoryFilters } from "@/lib/records";
 

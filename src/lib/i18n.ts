@@ -1,5 +1,3 @@
-import { cookies } from "next/headers";
-
 export type Locale = "en" | "fr";
 
 const copy = {
@@ -178,13 +176,7 @@ const companyTypes: Record<string, { en: string; fr: string }> = {
 
 export type Messages = { [K in keyof (typeof copy)["en"]]: string };
 
-export async function getLocale(): Promise<Locale> {
-  const jar = await cookies();
-  return jar.get("sc_lang")?.value === "fr" ? "fr" : "en";
-}
-
-export async function getMessages(): Promise<Messages> {
-  const locale = await getLocale();
+export function messagesFor(locale: Locale): Messages {
   return copy[locale];
 }
 

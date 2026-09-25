@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getSessionUser } from "@/lib/auth";
 import { hasDirectoryAccess } from "@/lib/domain";
 import { isDemoMode } from "@/lib/env";
-import { getLocale, getMessages } from "@/lib/i18n";
+import { getLocale, getMessages } from "@/lib/i18n-server";
 
 export async function SiteHeader() {
   const [user, locale, t] = await Promise.all([getSessionUser(), getLocale(), getMessages()]);

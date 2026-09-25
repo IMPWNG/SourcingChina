@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getMessages } from "@/lib/i18n";
+import { getMessages } from "@/lib/i18n-server";
 
 export async function SiteFooter() {
   const t = await getMessages();

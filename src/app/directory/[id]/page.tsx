@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductList } from "@/components/product-list";
-import { categoryLabel, companyTypeLabel, getLocale, getMessages, translated } from "@/lib/i18n";
+import { getLocale, getMessages } from "@/lib/i18n-server";
+import { categoryLabel, companyTypeLabel, translated } from "@/lib/i18n";
 import { directory } from "@/lib/store";
 
 type Params = { id: string };

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { categoryLabel, getLocale, getMessages } from "@/lib/i18n";
+import { getLocale, getMessages } from "@/lib/i18n-server";
+import { categoryLabel } from "@/lib/i18n";
 import { CATEGORIES } from "@/lib/seed";
 
 export default async function HomePage() {
