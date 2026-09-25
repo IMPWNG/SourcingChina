@@ -19,7 +19,7 @@ export async function SiteHeader() {
   ];
 
   return (
-    <header className="border-b border-border bg-background/90 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-border bg-background">
       {isDemoMode() ? (
         <p className="bg-accent px-4 py-2 text-center text-xs text-accent-foreground">
           {t.demo}

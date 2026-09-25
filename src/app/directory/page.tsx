@@ -45,11 +45,19 @@ export default async function DirectoryPage({
   ]);
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:grid-cols-[260px_1fr]">
-      <aside className="md:sticky md:top-6 md:self-start">
-        <DirectorySearch categories={categories} provinces={places.provinces} cities={places.cities} initial={filters} locale={locale} labels={t} />
+    <main className="mx-auto grid h-full max-w-6xl md:grid-cols-[260px_1fr]">
+      <aside className="hidden h-full md:block">
+        <div className="flex h-full items-center px-4">
+          <div className="w-full">
+            <DirectorySearch mode="panel" categories={categories} provinces={places.provinces} cities={places.cities} initial={filters} locale={locale} labels={t} />
+          </div>
+        </div>
       </aside>
-      <section className="space-y-4">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="px-4 pt-4 md:hidden">
+          <DirectorySearch mode="sheet" categories={categories} provinces={places.provinces} cities={places.cities} initial={filters} locale={locale} labels={t} />
+        </div>
+      <section className="h-full min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-8">
         {params.access === "demo" ? (
           <Alert>
             <AlertDescription>{t.demoAccess}</AlertDescription>
@@ -98,6 +106,7 @@ export default async function DirectoryPage({
         )}
         <p className="text-xs text-muted-foreground">{t.disclaimer}</p>
       </section>
+      </div>
     </main>
   );
 }

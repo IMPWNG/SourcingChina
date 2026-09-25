@@ -19,6 +19,7 @@ export function DirectorySearch({
   initial,
   locale,
   labels,
+  mode = "both",
 }: {
   categories: Category[];
   provinces: string[];
@@ -26,6 +27,7 @@ export function DirectorySearch({
   initial: DirectoryFilters;
   locale: Locale;
   labels: Messages;
+  mode?: "both" | "panel" | "sheet";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -48,15 +50,16 @@ export function DirectorySearch({
     event.currentTarget.form?.requestSubmit();
   }
 
+  const prefix = mode === "sheet" ? "sheet-" : "";
   const fields = (
     <form onSubmit={submit} className="space-y-4" aria-busy={pending} data-pending={pending ? "" : undefined}>
       <div className="space-y-2">
-        <Label htmlFor="q">{labels.searchLabel}</Label>
-        <Input id="q" name="q" defaultValue={initial.q ?? ""} placeholder={labels.searchPlaceholder} />
+        <Label htmlFor={`${prefix}q`}>{labels.searchLabel}</Label>
+        <Input id={`${prefix}q`} name="q" defaultValue={initial.q ?? ""} placeholder={labels.searchPlaceholder} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="category">{labels.category}</Label>
-        <select id="category" name="category" defaultValue={initial.category ?? ""} className={selectClass} onChange={apply}>
+        <Label htmlFor={`${prefix}category`}>{labels.category}</Label>
+        <select id={`${prefix}category`} name="category" defaultValue={initial.category ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyCategory}</option>
           {categories.map((category) => (
             <option key={category.id} value={category.slug}>
@@ -66,8 +69,8 @@ export function DirectorySearch({
         </select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="companyType">{labels.companyType}</Label>
-        <select id="companyType" name="companyType" defaultValue={initial.companyType ?? ""} className={selectClass} onChange={apply}>
+        <Label htmlFor={`${prefix}companyType`}>{labels.companyType}</Label>
+        <select id={`${prefix}companyType`} name="companyType" defaultValue={initial.companyType ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyType}</option>
           <option value="factory">{companyTypeLabel("factory", locale)}</option>
           <option value="trading">{companyTypeLabel("trading", locale)}</option>
@@ -76,8 +79,8 @@ export function DirectorySearch({
         </select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="province">{labels.province}</Label>
-        <select id="province" name="province" defaultValue={initial.province ?? ""} className={selectClass} onChange={apply}>
+        <Label htmlFor={`${prefix}province`}>{labels.province}</Label>
+        <select id={`${prefix}province`} name="province" defaultValue={initial.province ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyProvince}</option>
           {provinces.map((province) => (
             <option key={province} value={province}>
@@ -87,8 +90,8 @@ export function DirectorySearch({
         </select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="city">{labels.city}</Label>
-        <select id="city" name="city" defaultValue={initial.city ?? ""} className={selectClass} onChange={apply}>
+        <Label htmlFor={`${prefix}city`}>{labels.city}</Label>
+        <select id={`${prefix}city`} name="city" defaultValue={initial.city ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyCity}</option>
           {cities.map((city) => (
             <option key={city} value={city}>
@@ -116,8 +119,8 @@ export function DirectorySearch({
 
   return (
     <>
-      <div className="hidden md:block">{fields}</div>
-      <div className="md:hidden">
+      {mode !== "sheet" ? <div className={mode === "panel" ? undefined : "hidden md:block"}>{fields}</div> : null}
+      {mode !== "panel" ? <div className={mode === "sheet" ? undefined : "md:hidden"}>
         <Sheet>
           <SheetTrigger asChild>
             <Button variant="outline">{labels.filters}</Button>
@@ -129,7 +132,7 @@ export function DirectorySearch({
             <div className="px-4">{fields}</div>
           </SheetContent>
         </Sheet>
-      </div>
+      </div> : null}
     </>
   );
 }
