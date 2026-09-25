@@ -8,7 +8,7 @@
     "start": "next start --hostname 0.0.0.0 --port 43123",
     "lint": "eslint",
     "cards": "tsx --conditions=react-server scripts/read-cards.ts",
-    "cards:import": "tsx scripts/import-cards.ts",
+    "cards:import": "tsx --conditions=react-server scripts/import-cards.ts",
     "test": "tsx --test src/lib/domain.test.ts src/lib/billing/billing.test.ts src/lib/enrichment/extract.test.ts src/lib/demo/filesystem.test.ts src/lib/demo/card-drafts.test.ts src/lib/cards/batch.test.ts src/lib/cards/image.test.ts src/lib/cards/jpeg-frame.test.ts src/lib/ocr-text.test.ts src/lib/scrapegraph/fields.test.ts src/lib/scrapegraph/products.test.ts"
   },
   "dependencies": {

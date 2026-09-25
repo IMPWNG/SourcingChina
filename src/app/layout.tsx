@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { getLocale } from "@/lib/i18n";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,9 +23,10 @@ export const metadata: Metadata = {
   description: "A reviewed directory of Chinese motorcycle-industry factories, trading companies, and brands.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getLocale();
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang={locale} className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <SiteHeader />
         <div className="flex-1">{children}</div>

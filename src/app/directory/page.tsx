@@ -4,6 +4,7 @@ import { DirectorySearch } from "@/components/directory-search";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { categoryLabel, companyTypeLabel, getLocale, getMessages } from "@/lib/i18n";
 import { directory } from "@/lib/store";
 import type { DirectoryFilters } from "@/lib/records";
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = { title: "Directory" };
 const TYPES = new Set(["factory", "trading", "mixed", "unknown"]);
 
 function title(company: { name_en: string | null; name_zh: string | null; brand: string | null }) {
-  return company.name_en || company.name_zh || company.brand || "Unnamed supplier";
+  return company.name_en || company.name_zh || company.brand || "";
 }
 
 export default async function DirectoryPage({
@@ -34,7 +35,12 @@ export default async function DirectoryPage({
     hasEmail: one("hasEmail") === "1",
     hasWebsite: one("hasWebsite") === "1",
   };
-  const [categories, companies] = await Promise.all([directory.listCategories(), directory.search(filters)]);
+  const [categories, companies, t, locale] = await Promise.all([
+    directory.listCategories(),
+    directory.search(filters),
+    getMessages(),
+    getLocale(),
+  ]);
   const all = filters.q || filters.category || filters.companyType || filters.province || filters.city || filters.hasEmail || filters.hasWebsite
     ? await directory.search({})
     : companies;
@@ -44,25 +50,25 @@ export default async function DirectoryPage({
   return (
     <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:grid-cols-[260px_1fr]">
       <aside className="md:sticky md:top-6 md:self-start">
-        <DirectorySearch categories={categories} provinces={provinceOptions} cities={cityOptions} initial={filters} />
+        <DirectorySearch categories={categories} provinces={provinceOptions} cities={cityOptions} initial={filters} locale={locale} labels={t} />
       </aside>
       <section className="space-y-4">
         {params.access === "demo" ? (
           <Alert>
-            <AlertDescription>Demo access is active on this machine for 30 days. It is not an Airwallex payment.</AlertDescription>
+            <AlertDescription>{t.demoAccess}</AlertDescription>
           </Alert>
         ) : null}
         <div className="flex items-baseline justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
-          <p className="text-sm text-muted-foreground">{companies.length} published</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t.suppliers}</h1>
+          <p className="text-sm text-muted-foreground">{companies.length} {t.published}</p>
         </div>
         {companies.length === 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>No suppliers match</CardTitle>
+              <CardTitle>{t.noMatch}</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Try another city or category. Unpublished drafts are hidden until an editor publishes them.
+              {t.noMatchBody}
             </CardContent>
           </Card>
         ) : (
@@ -71,19 +77,19 @@ export default async function DirectoryPage({
               <li key={company.id}>
                 <Link href={`/directory/${company.id}`} className="block rounded-xl border border-border bg-card p-4 transition hover:bg-accent">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-medium">{title(company)}</h2>
-                    <Badge variant="outline">{company.company_type}</Badge>
+                    <h2 className="font-medium">{title(company) || t.unnamed}</h2>
+                    <Badge variant="outline">{companyTypeLabel(company.company_type, locale)}</Badge>
                   </div>
                   {company.name_zh ? <p className="mt-1 text-sm text-muted-foreground">{company.name_zh}</p> : null}
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {[company.city, company.province].filter(Boolean).join(", ") || "Location not on file"}
+                    {[company.city, company.province].filter(Boolean).join(", ") || t.locationMissing}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {company.category_ids.map((id) => {
                       const category = categories.find((item) => item.id === id);
                       return category ? (
                         <Badge key={id} variant="secondary">
-                          {category.name_en}
+                          {categoryLabel(category.slug, locale, category.name_en)}
                         </Badge>
                       ) : null;
                     })}
@@ -93,7 +99,7 @@ export default async function DirectoryPage({
             ))}
           </ul>
         )}
-        <p className="text-xs text-muted-foreground">Data as collected from public materials; verify before business use.</p>
+        <p className="text-xs text-muted-foreground">{t.disclaimer}</p>
       </section>
     </main>
   );

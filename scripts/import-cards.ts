@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { missingSupabaseKeys, parseCardBatch, supabaseKeyMessage, type CardCompanyRecord, type CardRecord } from "@/lib/cards/batch";
 import type { CatalogReason } from "@/lib/scrapegraph/products";
+import { translateCard } from "@/lib/translate";
 import { loadEnvLocal } from "./load-env";
 
 function scrapeStatus(reason: CatalogReason): "succeeded" | "failed" | "skipped" | "never" {
@@ -46,9 +49,19 @@ async function findCompany(supabase: SupabaseClient, company: CardCompanyRecord)
   return row?.id ?? null;
 }
 
-async function upsertCompany(supabase: SupabaseClient, card: CardRecord): Promise<string> {
+export function cardsSupabase(): SupabaseClient {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, (process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+export async function upsertCompany(
+  supabase: SupabaseClient,
+  card: CardRecord,
+  scrape: ReturnType<typeof scrapeStatus> = scrapeStatus(card.catalog),
+): Promise<string> {
   const existing = await findCompany(supabase, card.company);
-  const status = scrapeStatus(card.catalog);
+  const status = scrape;
   const patch = {
     ...filledCompany(card.company),
     last_scrape_status: status,
@@ -94,7 +107,7 @@ async function upsertContact(supabase: SupabaseClient, companyId: string, compan
   if (inserted.error) throw new Error(inserted.error.message);
 }
 
-async function upsertProducts(supabase: SupabaseClient, companyId: string, card: CardRecord): Promise<number> {
+export async function upsertProducts(supabase: SupabaseClient, companyId: string, card: CardRecord): Promise<number> {
   if (!card.products.length) return 0;
   const slugs = [...new Set(card.products.map((item) => item.category).filter((item): item is string => Boolean(item)))];
   const categories = slugs.length
@@ -162,13 +175,12 @@ async function main(): Promise<void> {
     console.error("That file is not a card batch. Expected a JSON object with a cards array.");
     process.exit(1);
   }
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, (process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)!, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = cardsSupabase();
   let companies = 0;
   let products = 0;
   for (const card of batch.cards) {
     try {
+      await translateCard(card);
       const id = await upsertCompany(supabase, card);
       const saved = await upsertProducts(supabase, id, card);
       companies += 1;
@@ -183,7 +195,9 @@ async function main(): Promise<void> {
   console.log(`Upserted ${companies} compan${companies === 1 ? "y" : "ies"} and ${products} product${products === 1 ? "" : "s"}.`);
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "The command failed.");
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "The command failed.");
+    process.exit(1);
+  });
+}

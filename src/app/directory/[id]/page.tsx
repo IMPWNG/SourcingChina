@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductList } from "@/components/product-list";
+import { categoryLabel, companyTypeLabel, getLocale, getMessages, translated } from "@/lib/i18n";
 import { directory } from "@/lib/store";
 
 type Params = { id: string };
@@ -16,75 +17,82 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 
 export default async function CompanyPage({ params }: { params: Promise<Params> }) {
   const { id } = await params;
-  const [company, categories] = await Promise.all([directory.getPublished(id), directory.listCategories()]);
+  const [company, categories, t, locale] = await Promise.all([
+    directory.getPublished(id),
+    directory.listCategories(),
+    getMessages(),
+    getLocale(),
+  ]);
   if (!company) notFound();
-  const title = company.name_en || company.name_zh || company.brand || "Unnamed supplier";
+  const shared = company.products[0]?.details ?? {};
+  const title = company.name_en || company.name_zh || company.brand || t.unnamed;
+  const city = translated(shared, "city", locale, company.city);
   const website = company.website?.startsWith("fixture:") ? null : company.website;
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
       <p>
         <Link href="/directory" className="text-sm text-muted-foreground hover:text-foreground">
-          Back to search
+          {t.back}
         </Link>
       </p>
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-          <Badge variant="outline">{company.company_type}</Badge>
+          <Badge variant="outline">{companyTypeLabel(company.company_type, locale)}</Badge>
         </div>
         {company.name_zh && company.name_en ? <p className="text-muted-foreground">{company.name_zh}</p> : null}
-        {company.brand ? <p className="text-sm">Brand: {company.brand}</p> : null}
+        {company.brand ? <p className="text-sm">{t.brand}: {company.brand}</p> : null}
       </header>
       <div className="flex flex-wrap gap-2">
         {company.category_ids.map((categoryId) => {
           const category = categories.find((item) => item.id === categoryId);
-          return category ? <Badge key={categoryId}>{category.name_en}</Badge> : null;
+          return category ? <Badge key={categoryId}>{categoryLabel(category.slug, locale, category.name_en)}</Badge> : null;
         })}
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>Company</CardTitle>
+          <CardTitle>{t.company}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>{[company.address, company.city, company.province, company.country].filter(Boolean).join(", ") || "Address not on file."}</p>
-          <p>Phone: {company.phone || "Not on file"}</p>
-          <p>Email: {company.email || "Not on file"}</p>
-          <p>WeChat: {company.wechat || "Not on file"}</p>
+          <p>{[translated(shared, "address", locale, company.address), city, company.province, company.country].filter(Boolean).join(", ") || t.addressMissing}</p>
+          <p>{t.phone}: {company.phone || t.notOnFile}</p>
+          <p>{t.email}: {company.email || t.notOnFile}</p>
+          <p>{t.wechat}: {company.wechat || t.notOnFile}</p>
           <p>
-            Website:{" "}
+            {t.website}:{" "}
             {website ? (
               <a className="underline" href={website} rel="noreferrer" target="_blank">
                 {website.replace(/^https?:\/\//, "")}
               </a>
             ) : company.website?.startsWith("fixture:") ? (
               <Link href="/fixtures/sample-supplier" className="underline">
-                Sample page used to demonstrate enrichment
+                {t.samplePage}
               </Link>
             ) : (
-              "Not on file"
+              t.notOnFile
             )}
           </p>
-          <p>Export markets: {company.export_markets.length ? company.export_markets.join(", ") : "Not stated"}</p>
+          <p>{t.markets}: {company.export_markets.length ? company.export_markets.join(", ") : t.notStated}</p>
         </CardContent>
       </Card>
       {company.products.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>Products</CardTitle>
+            <CardTitle>{t.products}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ProductList products={company.products} categories={categories} />
+            <ProductList products={company.products} categories={categories} locale={locale} empty={t.noProducts} />
           </CardContent>
         </Card>
       ) : null}
       <Card>
         <CardHeader>
-          <CardTitle>Product families</CardTitle>
+          <CardTitle>{t.familiesTitle}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {company.families.length === 0 ? (
-            <p className="text-muted-foreground">No product families have been reviewed for this company yet.</p>
+            <p className="text-muted-foreground">{t.noFamilies}</p>
           ) : (
             company.families.map((family) => (
               <div key={family.id}>
@@ -98,7 +106,7 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
       {company.certifications.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>Certifications named on file</CardTitle>
+            <CardTitle>{t.certs}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             {company.certifications.map((cert) => (
@@ -112,7 +120,7 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
       {company.factories.length ? (
         <Card>
           <CardHeader>
-            <CardTitle>Factory addresses</CardTitle>
+            <CardTitle>{t.factories}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {company.factories.map((factory) => (

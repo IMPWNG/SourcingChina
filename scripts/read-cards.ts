@@ -2,9 +2,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parseCardArgs, type CardRecord } from "@/lib/cards/batch";
+import { missingSupabaseKeys, parseCardArgs, supabaseKeyMessage, type CardRecord } from "@/lib/cards/batch";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { CATEGORIES } from "@/lib/seed";
+import { translateCard } from "@/lib/translate";
+import { cardsSupabase, upsertCompany, upsertProducts } from "./import-cards";
 import { loadEnvLocal } from "./load-env";
 
 function pythonBin(): string {
@@ -18,22 +20,32 @@ function pythonBin(): string {
   return "python3";
 }
 
-async function crawlCards(cards: CardRecord[]): Promise<void> {
+function cardSites(card: CardRecord): string[] {
+  return (card.company.websites?.length ? card.company.websites : [card.company.website]).filter((site): site is string => Boolean(site));
+}
+
+async function saveCardThenCrawl(cards: CardRecord[]): Promise<void> {
   const categories = CATEGORIES.map((item) => ({ id: item.id, slug: item.slug, name_en: item.name_en, name_zh: item.name_zh }));
   const slugById = new Map<string, string>(categories.map((item) => [item.id, item.slug]));
+  const supabase = cardsSupabase();
   for (const card of cards) {
-    const sites = (card.company.websites?.length ? card.company.websites : [card.company.website]).filter(
-      (site): site is string => Boolean(site),
-    );
+    const sites = cardSites(card);
     if (!sites.length) {
       card.catalog = "no_website";
       card.products = [];
+    }
+    const companyId = await upsertCompany(supabase, { ...card, products: [] }, sites.length ? "never" : "skipped");
+    console.log(`${card.source}: saved company ${companyId}`);
+    if (!sites.length) {
+      console.log(`${card.source}: no website on the card, crawl skipped`);
       continue;
     }
+    console.log(`${card.source}: crawling ${sites[0]} for a products page`);
     try {
       let crawl = await scrapeSiteProducts(sites[0] ?? null, categories);
       for (const site of sites.slice(1)) {
         if (crawl.reason === "saved") break;
+        console.log(`${card.source}: crawling ${site} for a products page`);
         const next = await scrapeSiteProducts(site, categories);
         if (next.reason === "saved" || crawl.reason === "failed") crawl = next;
       }
@@ -51,6 +63,11 @@ async function crawlCards(cards: CardRecord[]): Promise<void> {
       card.products = [];
       console.error(`${card.source}: ${error instanceof Error ? error.message : "The website could not be crawled."}`);
     }
+    console.log(`${card.source}: translating into English and French`);
+    await translateCard(card);
+    await upsertCompany(supabase, card);
+    const saved = await upsertProducts(supabase, companyId, card);
+    console.log(`${card.source}: saved ${saved} product${saved === 1 ? "" : "s"}`);
   }
 }
 
@@ -71,7 +88,13 @@ async function main(): Promise<void> {
   if ((child.status ?? 1) !== 0) process.exit(child.status ?? 1);
   const raw = JSON.parse(await readFile(parsed.out, "utf8")) as { cards?: CardRecord[] };
   const cards = raw.cards ?? [];
-  await crawlCards(cards);
+  const missing = missingSupabaseKeys(process.env);
+  if (missing.length) {
+    console.error(supabaseKeyMessage(missing));
+    console.error("The card text is in the JSON file. The site was not crawled because the company row could not be saved.");
+    process.exit(1);
+  }
+  await saveCardThenCrawl(cards);
   await writeFile(parsed.out, `${JSON.stringify(raw, null, 2)}\n`);
   console.log(`Wrote ${cards.length} card${cards.length === 1 ? "" : "s"} to ${parsed.out}`);
 }

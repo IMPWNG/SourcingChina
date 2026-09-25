@@ -5,11 +5,11 @@ import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
-export function MobileNav({ links }: { links: { href: string; label: string }[] }) {
+export function MobileNav({ links, menuLabel }: { links: { href: string; label: string }[]; menuLabel: string }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="outline" size="icon" className="md:hidden" aria-label="Open menu">
+        <Button variant="outline" size="icon" className="md:hidden" aria-label={menuLabel}>
           <Menu />
         </Button>
       </SheetTrigger>

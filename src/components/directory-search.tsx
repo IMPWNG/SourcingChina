@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { categoryLabel, companyTypeLabel, type Locale, type Messages } from "@/lib/i18n";
 import type { Category } from "@/lib/records";
 import type { DirectoryFilters } from "@/lib/records";
 
@@ -16,11 +17,15 @@ export function DirectorySearch({
   provinces,
   cities,
   initial,
+  locale,
+  labels,
 }: {
   categories: Category[];
   provinces: string[];
   cities: string[];
   initial: DirectoryFilters;
+  locale: Locale;
+  labels: Messages;
 }) {
   const router = useRouter();
 
@@ -40,34 +45,34 @@ export function DirectorySearch({
   const fields = (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="q">Name, brand, or city</Label>
-        <Input id="q" name="q" defaultValue={initial.q ?? ""} placeholder="Helmets in Chongqing" />
+        <Label htmlFor="q">{labels.searchLabel}</Label>
+        <Input id="q" name="q" defaultValue={initial.q ?? ""} placeholder={labels.searchPlaceholder} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="category">Category</Label>
+        <Label htmlFor="category">{labels.category}</Label>
         <select id="category" name="category" defaultValue={initial.category ?? ""} className={selectClass}>
-          <option value="">Any category</option>
+          <option value="">{labels.anyCategory}</option>
           {categories.map((category) => (
             <option key={category.id} value={category.slug}>
-              {category.name_en}
+              {categoryLabel(category.slug, locale, category.name_en)}
             </option>
           ))}
         </select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="companyType">Company type</Label>
+        <Label htmlFor="companyType">{labels.companyType}</Label>
         <select id="companyType" name="companyType" defaultValue={initial.companyType ?? ""} className={selectClass}>
-          <option value="">Any type</option>
-          <option value="factory">Factory</option>
-          <option value="trading">Trading company</option>
-          <option value="mixed">Factory and trading</option>
-          <option value="unknown">Not classified</option>
+          <option value="">{labels.anyType}</option>
+          <option value="factory">{companyTypeLabel("factory", locale)}</option>
+          <option value="trading">{companyTypeLabel("trading", locale)}</option>
+          <option value="mixed">{companyTypeLabel("mixed", locale)}</option>
+          <option value="unknown">{companyTypeLabel("unknown", locale)}</option>
         </select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="province">Province</Label>
+        <Label htmlFor="province">{labels.province}</Label>
         <select id="province" name="province" defaultValue={initial.province ?? ""} className={selectClass}>
-          <option value="">Any province</option>
+          <option value="">{labels.anyProvince}</option>
           {provinces.map((province) => (
             <option key={province} value={province}>
               {province}
@@ -76,9 +81,9 @@ export function DirectorySearch({
         </select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="city">City</Label>
+        <Label htmlFor="city">{labels.city}</Label>
         <select id="city" name="city" defaultValue={initial.city ?? ""} className={selectClass}>
-          <option value="">Any city</option>
+          <option value="">{labels.anyCity}</option>
           {cities.map((city) => (
             <option key={city} value={city}>
               {city}
@@ -88,16 +93,16 @@ export function DirectorySearch({
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="hasEmail" defaultChecked={initial.hasEmail} />
-        Has an email
+        {labels.hasEmail}
       </label>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="hasWebsite" defaultChecked={initial.hasWebsite} />
-        Has a website
+        {labels.hasWebsite}
       </label>
       <div className="flex gap-2">
-        <Button type="submit">Search</Button>
+        <Button type="submit">{labels.search}</Button>
         <Button type="button" variant="outline" onClick={() => router.push("/directory")}>
-          Clear
+          {labels.clear}
         </Button>
       </div>
     </form>
@@ -109,11 +114,11 @@ export function DirectorySearch({
       <div className="md:hidden">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline">Filters</Button>
+            <Button variant="outline">{labels.filters}</Button>
           </SheetTrigger>
           <SheetContent>
             <SheetHeader>
-              <SheetTitle>Filter suppliers</SheetTitle>
+              <SheetTitle>{labels.filterSuppliers}</SheetTitle>
             </SheetHeader>
             <div className="px-4">{fields}</div>
           </SheetContent>
