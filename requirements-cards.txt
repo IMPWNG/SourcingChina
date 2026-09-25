@@ -1,0 +1,4 @@
+# Local card OCR. Chinese + English models download on the first run.
+paddlepaddle==3.3.1
+paddleocr==2.10.0
+Pillow==12.3.0

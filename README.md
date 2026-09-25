@@ -39,7 +39,17 @@ npm run lint
 
 These two commands stay on your computer. Put `MAMMOUTH_API_KEY` and the Supabase URL and secret in `.env.local`. That file is gitignored.
 
-The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). On macOS, HEIC and HEIF files are converted with `sips` into a full-size JPEG before Tesseract reads them. JPEG files are decoded to the primary photo as well, so a phone picture that also stores a tiny preview is not sent to Tesseract as a few pixels. Sideways cards are rotated until the text is horizontal. An image smaller than 200 pixels on either side is rejected as undecoded, and the rest of the folder still runs. Tesseract reads Chinese and English. That text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`). A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the OCR text and skips the crawl.
+The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). It runs `scripts/read_cards.py`. Install that reader once:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-cards.txt
+```
+
+The first OCR downloads the PaddleOCR Chinese and English models. Sideways cards are rotated until the text is horizontal. On macOS, HEIC and HEIF files are converted with `sips` before they are read. An image smaller than 200 pixels on either side is rejected, and the rest of the folder still runs. The OCR text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`) to separate the Chinese company name, the English company name, the person, and the job title. A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the fields it can see in the OCR text and skips the crawl.
+
+If PaddleOCR will not install, a Mac can use Vision instead: `pip install ocrmac`. The same `npm run cards` command uses it when PaddleOCR is missing.
 
 The second command reads that JSON and upserts companies and products in Supabase. A matching website, or the Chinese and English names when there is no website, updates the existing row. New companies stay unpublished. If the Supabase URL or secret is missing, the command prints the variable names and exits.
 

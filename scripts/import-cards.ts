@@ -57,6 +57,7 @@ async function upsertCompany(supabase: SupabaseClient, card: CardRecord): Promis
   if (existing) {
     const updated = await supabase.from("companies").update(patch).eq("id", existing).select("id").single();
     if (updated.error) throw new Error(updated.error.message);
+    await upsertContact(supabase, existing, card.company);
     return existing;
   }
   const inserted = await supabase
@@ -65,7 +66,32 @@ async function upsertCompany(supabase: SupabaseClient, card: CardRecord): Promis
     .select("id")
     .single();
   if (inserted.error) throw new Error(inserted.error.message);
-  return (inserted.data as { id: string }).id;
+  const id = (inserted.data as { id: string }).id;
+  await upsertContact(supabase, id, card.company);
+  return id;
+}
+
+async function upsertContact(supabase: SupabaseClient, companyId: string, company: CardCompanyRecord): Promise<void> {
+  const name = company.contact_name;
+  if (!name) return;
+  const existing = await supabase.from("contacts").select("id").eq("company_id", companyId).eq("name", name).limit(1);
+  if (existing.error) throw new Error(existing.error.message);
+  const row = {
+    company_id: companyId,
+    name,
+    title: company.contact_title,
+    phone: company.phone,
+    email: company.email,
+    is_public: false,
+  };
+  const found = (existing.data ?? [])[0] as { id: string } | undefined;
+  if (found) {
+    const updated = await supabase.from("contacts").update(row).eq("id", found.id);
+    if (updated.error) throw new Error(updated.error.message);
+    return;
+  }
+  const inserted = await supabase.from("contacts").insert(row);
+  if (inserted.error) throw new Error(inserted.error.message);
 }
 
 async function upsertProducts(supabase: SupabaseClient, companyId: string, card: CardRecord): Promise<number> {

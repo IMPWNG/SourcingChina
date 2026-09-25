@@ -16,6 +16,8 @@ const company = {
   phone: "+86 13800002210",
   email: "sales@apexride.example",
   export_markets: [],
+  contact_name: "Li Wei",
+  contact_title: "Sales",
 };
 
 test("card args accept a folder and an output file", () => {
@@ -33,6 +35,8 @@ test("a website, phone, or email is kept only when the photo text contains it", 
   assert.equal(kept.website, "https://apexride.example");
   assert.equal(kept.phone, "+86 13800002210");
   assert.equal(kept.email, null);
+  assert.equal(kept.contact_name, null);
+  assert.equal(keepPrintedContacts({ ...company, contact_name: "Li Wei" }, `${printed}\nLi Wei`).contact_name, "Li Wei");
   assert.equal(keepPrintedContacts({ ...company, email: "shao@superpowertech.com" }, "cyshao@superpowertech.com").email, null);
   assert.equal(
     keepPrintedContacts({ ...company, email: "cyshao@superpowertech.com" }, "cyshao@superpowertech.com").email,

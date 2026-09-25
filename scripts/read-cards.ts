@@ -1,123 +1,49 @@
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { keepPrintedContacts, parseCardArgs, type CardCompanyRecord, type CardRecord } from "@/lib/cards/batch";
-import { cardImageForOcr } from "@/lib/cards/image";
-import type { CardExtraction } from "@/lib/domain";
-import { extractCard } from "@/lib/domain";
-import { openJpegForOcr, recognizeImage, shutdownOcr } from "@/lib/ocr";
+import { parseCardArgs, type CardRecord } from "@/lib/cards/batch";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
-import { extractCardWithScrapeGraph } from "@/lib/scrapegraph/extract";
-import { mammouthConfig } from "@/lib/mammouth/client";
 import { CATEGORIES } from "@/lib/seed";
-import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { loadEnvLocal } from "./load-env";
 
-const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"]);
-/** A full card photo, including the Chinese model load, can outlast the short server limit. */
-const CARD_OCR_MS = 180_000;
-
-function companyFrom(extraction: CardExtraction): CardCompanyRecord {
-  return {
-    name_zh: extraction.name_zh,
-    name_en: extraction.name_en,
-    brand: extraction.brand,
-    company_type: extraction.company_type,
-    address: extraction.address,
-    city: extraction.city,
-    province: extraction.province,
-    country: extraction.country || "CN",
-    website: extraction.website,
-    wechat: extraction.wechat,
-    phone: extraction.phone,
-    email: extraction.email,
-    export_markets: extraction.export_markets,
-  };
-}
-
-async function imagePaths(input: string): Promise<string[]> {
-  const info = await stat(input);
-  if (info.isDirectory()) {
-    const names = await readdir(input);
-    return names
-      .filter((name) => IMAGE_EXT.has(path.extname(name).toLowerCase()))
-      .sort((a, b) => a.localeCompare(b))
-      .map((name) => path.join(input, name));
+function pythonBin(): string {
+  const candidates = [
+    path.join(process.cwd(), ".venv", "bin", "python3"),
+    path.join(process.cwd(), ".venv", "bin", "python"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
   }
-  if (!IMAGE_EXT.has(path.extname(input).toLowerCase())) {
-    throw new Error(`${input} is not a jpg, png, webp, or heic photo.`);
-  }
-  return [input];
+  return "python3";
 }
 
-function unreadCard(file: string, ocrError: string): CardRecord {
-  return {
-    source: file,
-    ocr_text: null,
-    ocr_error: ocrError,
-    mammouth_error: null,
-    company: companyFrom(extractCard("")),
-    products: [],
-    catalog: "no_website",
-  };
-}
-
-async function readCard(file: string): Promise<CardRecord> {
-  const ext = path.extname(file).toLowerCase();
-  const original = await readFile(file);
-  let prepared: { bytes: Buffer; mime: string };
-  try {
-    prepared = await cardImageForOcr(original, ext);
-    if (prepared.mime === "image/jpeg") {
-      const opened = await openJpegForOcr(prepared.bytes);
-      const turned = opened.turns === 0 ? "" : `, rotated ${opened.turns * 90}° so the text is horizontal`;
-      console.error(`Decoded ${file} at ${opened.decodedWidth}×${opened.decodedHeight}${turned}`);
-      prepared = { bytes: opened.bytes, mime: "image/jpeg" };
+async function crawlCards(cards: CardRecord[]): Promise<void> {
+  const categories = CATEGORIES.map((item) => ({ id: item.id, slug: item.slug, name_en: item.name_en, name_zh: item.name_zh }));
+  const slugById = new Map<string, string>(categories.map((item) => [item.id, item.slug]));
+  for (const card of cards) {
+    if (!card.company.website) {
+      card.catalog = "no_website";
+      card.products = [];
+      continue;
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not convert this photo.";
-    console.error(`${file}: ${message}`);
-    return unreadCard(file, message);
+    try {
+      const crawl = await scrapeSiteProducts(card.company.website, categories);
+      card.catalog = crawl.reason;
+      card.products = crawl.products.map((item) => ({
+        name: item.name,
+        description: item.description,
+        image_url: item.image_url,
+        source_url: item.source_url,
+        category: item.category_id ? slugById.get(item.category_id) ?? null : null,
+        details: item.details,
+      }));
+    } catch (error) {
+      card.catalog = "failed";
+      card.products = [];
+      console.error(`${card.source}: ${error instanceof Error ? error.message : "The website could not be crawled."}`);
+    }
   }
-  const ocr = await recognizeImage(prepared.bytes, prepared.mime, CARD_OCR_MS, { prepared: true });
-  const ocrError =
-    ocr.provider === "tesseract_error"
-      ? "The photo could not be read."
-      : ocr.text
-        ? null
-        : "This photo had no readable text.";
-  let extraction = extractCard(ocr.text ?? "");
-  let mammouthError: string | null = null;
-  if (ocr.text) {
-    const structured = await extractCardWithScrapeGraph({ text: ocr.text, image: null });
-    if (structured.extraction) extraction = structured.extraction;
-    else if (structured.attempted) mammouthError = structured.error;
-  }
-  const company = keepPrintedContacts(companyFrom(extraction), ocr.text);
-  let catalog: CatalogReason = company.website ? "failed" : "no_website";
-  let products: CardRecord["products"] = [];
-  if (company.website) {
-    const categories = CATEGORIES.map((item) => ({ id: item.id, slug: item.slug, name_en: item.name_en, name_zh: item.name_zh }));
-    const slugById = new Map<string, string>(categories.map((item) => [item.id, item.slug]));
-    const crawl = await scrapeSiteProducts(company.website, categories);
-    catalog = crawl.reason;
-    products = crawl.products.map((item) => ({
-      name: item.name,
-      description: item.description,
-      image_url: item.image_url,
-      source_url: item.source_url,
-      category: item.category_id ? slugById.get(item.category_id) ?? null : null,
-      details: item.details,
-    }));
-  }
-  return {
-    source: file,
-    ocr_text: ocr.text,
-    ocr_error: ocrError,
-    mammouth_error: mammouthError,
-    company,
-    products,
-    catalog,
-  };
 }
 
 async function main(): Promise<void> {
@@ -128,33 +54,18 @@ async function main(): Promise<void> {
     console.error("Usage: npm run cards -- <folder-or-photos...> --out cards.json");
     process.exit(1);
   }
-  const files: string[] = [];
-  for (const input of parsed.paths) files.push(...(await imagePaths(input)));
-  if (!files.length) {
-    console.error("No card photos found. Use jpg, png, webp, or heic.");
+  const script = path.join(process.cwd(), "scripts", "read_cards.py");
+  const child = spawnSync(pythonBin(), ["-u", script, ...process.argv.slice(2)], { stdio: "inherit", env: process.env });
+  if (child.error) {
+    console.error("Python is required to read card photos. Install it, then run: pip install -r requirements-cards.txt");
     process.exit(1);
   }
-  if (!mammouthConfig()) {
-    console.error("MAMMOUTH_API_KEY is not set. Cards will keep the OCR text and sites will not be crawled.");
-  }
-  const cards: CardRecord[] = [];
-  try {
-    for (const file of files) {
-      console.error(`Reading ${file}`);
-      try {
-        cards.push(await readCard(file));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "The photo could not be read.";
-        console.error(`${file}: ${message}`);
-        cards.push(unreadCard(file, message));
-      }
-    }
-    const batch = { generated_at: new Date().toISOString(), cards };
-    await writeFile(parsed.out, `${JSON.stringify(batch, null, 2)}\n`);
-    console.log(`Wrote ${cards.length} card${cards.length === 1 ? "" : "s"} to ${parsed.out}`);
-  } finally {
-    await shutdownOcr();
-  }
+  if ((child.status ?? 1) !== 0) process.exit(child.status ?? 1);
+  const raw = JSON.parse(await readFile(parsed.out, "utf8")) as { cards?: CardRecord[] };
+  const cards = raw.cards ?? [];
+  await crawlCards(cards);
+  await writeFile(parsed.out, `${JSON.stringify(raw, null, 2)}\n`);
+  console.log(`Wrote ${cards.length} card${cards.length === 1 ? "" : "s"} to ${parsed.out}`);
 }
 
 main().catch((error: unknown) => {

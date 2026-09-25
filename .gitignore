@@ -38,6 +38,11 @@ yarn-error.log*
 /data/
 /cards.json
 
+# local card OCR
+.venv
+__pycache__/
+*.pyc
+
 # vercel
 .vercel
 

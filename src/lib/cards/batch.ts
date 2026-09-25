@@ -17,6 +17,8 @@ export type CardCompanyRecord = {
   phone: string | null;
   email: string | null;
   export_markets: string[];
+  contact_name: string | null;
+  contact_title: string | null;
 };
 
 export type CardProductRecord = {
@@ -111,6 +113,8 @@ function companyOf(value: unknown): CardCompanyRecord | null {
     phone: blank(record.phone),
     email: blank(record.email),
     export_markets: stringList(record.export_markets),
+    contact_name: blank(record.contact_name),
+    contact_title: blank(record.contact_title),
   };
 }
 
@@ -169,7 +173,15 @@ export function keepPrintedContacts(company: CardCompanyRecord, ocrText: string 
     website: printedWebsite(company.website, text),
     phone: printedPhone(company.phone, text),
     email: printedEmail(company.email, text),
+    contact_name: printedSnippet(company.contact_name, text),
+    contact_title: printedSnippet(company.contact_title, text),
   };
+}
+
+function printedSnippet(value: string | null, text: string): string | null {
+  if (!value) return null;
+  const compact = (item: string) => item.replace(/\s+/g, "").toLowerCase();
+  return compact(text).includes(compact(value)) ? value : null;
 }
 
 function printedEmail(email: string | null, text: string): string | null {
