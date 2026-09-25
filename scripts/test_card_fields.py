@@ -1,6 +1,7 @@
 import unittest
 
 from scripts.card_fields import apply_model_fields, classify_locally, printed_email
+from scripts.read_cards import choose_engine, score_vision
 
 SUPER = """SuperPower
 邵春雨
@@ -32,6 +33,21 @@ salesa05@dingtalk.com
 
 
 class CardFieldsTest(unittest.TestCase):
+    def test_missing_paddle_uses_ocrmac(self) -> None:
+        self.assertEqual(choose_engine(False, "ocrmac"), "ocrmac")
+        self.assertEqual(choose_engine(True, "ocrmac"), "paddleocr")
+        with self.assertRaises(SystemExit) as raised:
+            choose_engine(False, None)
+        self.assertIn("pip install ocrmac", str(raised.exception))
+        self.assertNotIn("paddlepaddle", str(raised.exception))
+        text = score_vision(
+            [
+                ("bottom", 0.9, (0.1, 0.1, 0.2, 0.05)),
+                ("top", 0.9, (0.1, 0.8, 0.2, 0.05)),
+            ]
+        )[1]
+        self.assertEqual(text, "top\nbottom")
+
     def test_email_suffix_is_not_the_printed_address(self) -> None:
         self.assertIsNone(printed_email("shao@superpowertech.com", "cyshao@superpowertech.com"))
         self.assertEqual(printed_email("cyshao@superpowertech.com", "cyshao@superpowertech.com"), "cyshao@superpowertech.com")

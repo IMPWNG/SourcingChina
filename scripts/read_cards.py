@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Read business-card photos with PaddleOCR, then classify the text.
+"""Read business-card photos, then classify the text.
 
-PaddleOCR (Chinese + English) is the engine when it imports. On macOS, if
-Paddle is not installed, the same command uses Vision through ocrmac or pyobjc.
+On a Mac, Apple Vision (the ocrmac package) reads Chinese and English when
+PaddleOCR is not installed. Paddle is optional.
 """
 
 from __future__ import annotations
@@ -133,50 +133,57 @@ def downscale(image, edge: int):
     return image.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.Resampling.LANCZOS)
 
 
+def paddle_available() -> bool:
+    try:
+        from paddleocr import PaddleOCR  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def vision_available() -> str | None:
+    try:
+        import ocrmac  # noqa: F401
+
+        return "ocrmac"
+    except Exception:
+        pass
+    try:
+        import Vision  # noqa: F401
+        import Quartz  # noqa: F401
+
+        return "pyobjc"
+    except Exception:
+        return None
+
+
+def choose_engine(paddle_ok: bool, vision_name: str | None) -> str:
+    """Use Paddle only when it imports. Otherwise use Apple Vision."""
+    if paddle_ok:
+        return "paddleocr"
+    if vision_name:
+        return vision_name
+    raise SystemExit(
+        "Apple Vision is not available. On a Mac, from the repository root:\n"
+        "  python3 -m venv .venv\n"
+        "  source .venv/bin/activate\n"
+        "  pip install ocrmac\n"
+        "Then run: npm run cards -- ./business-card --out cards.json"
+    )
+
+
 class CardReader:
     def __init__(self) -> None:
         self.name = ""
         self._paddle = None
 
     def load(self) -> None:
-        try:
+        self.name = choose_engine(paddle_available(), vision_available())
+        if self.name == "paddleocr":
             from paddleocr import PaddleOCR
 
             self._paddle = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
-            self.name = "paddleocr"
-            return
-        except Exception as error:
-            paddle_error = error
-        if self._vision_ready():
-            return
-        message = (
-            "PaddleOCR is not installed, and macOS Vision is not available.\n"
-            "From the repository root:\n"
-            "  python3 -m venv .venv\n"
-            "  source .venv/bin/activate\n"
-            "  pip install -r requirements-cards.txt\n"
-            "On a Mac, if that install fails:\n"
-            "  pip install ocrmac\n"
-            f"({paddle_error})"
-        )
-        raise SystemExit(message)
-
-    def _vision_ready(self) -> bool:
-        try:
-            import ocrmac  # noqa: F401
-
-            self.name = "ocrmac"
-            return True
-        except Exception:
-            pass
-        try:
-            import Vision  # noqa: F401
-            import Quartz  # noqa: F401
-
-            self.name = "pyobjc"
-            return True
-        except Exception:
-            return False
 
     def read(self, image) -> tuple[float, str]:
         if self.name == "paddleocr":
@@ -184,8 +191,7 @@ class CardReader:
 
             result = self._paddle.ocr(np.array(image), cls=True)
             return score_paddle(result)
-        text = vision_text(image, self.name)
-        return float(len(text)), text
+        return score_vision(recognize_vision(image, self.name))
 
 
 def score_paddle(result: Any) -> tuple[float, str]:
@@ -214,20 +220,48 @@ def score_paddle(result: Any) -> tuple[float, str]:
     return chars + wide * 5 + confidence, "\n".join(item[2] for item in ordered)
 
 
-def vision_text(image, engine: str) -> str:
-    from PIL import Image
+def score_vision(rows: list[Any]) -> tuple[float, str]:
+    placed: list[tuple[float, float, str, float]] = []
+    for item in rows:
+        if not item:
+            continue
+        text = str(item[0] or "").strip()
+        if not text:
+            continue
+        confidence = float(item[1]) if len(item) > 1 and item[1] is not None else 0.0
+        box = item[2] if len(item) > 2 and item[2] is not None else (0.0, 0.0, 0.0, 0.0)
+        x = float(box[0])
+        y = float(box[1])
+        placed.append((-y, x, text, confidence))
+    placed.sort()
+    text = "\n".join(item[2] for item in placed)
+    return sum(item[3] for item in placed) + len(text), text
 
+
+def recognize_vision(image, engine: str) -> list[Any]:
+    if engine == "ocrmac":
+        from ocrmac import ocrmac
+
+        last: Exception | None = None
+        for languages in (["zh-Hans", "en-US"], ["zh-Hans"], None):
+            try:
+                kwargs: dict[str, Any] = {"recognition_level": "accurate"}
+                if languages:
+                    kwargs["language_preference"] = languages
+                return list(ocrmac.OCR(image, **kwargs).recognize())
+            except Exception as error:
+                last = error
+        raise RuntimeError(f"Could not read this photo ({last}).")
+    return pyobjc_rows(image)
+
+
+def pyobjc_rows(image) -> list[Any]:
     handle = tempfile.NamedTemporaryFile(prefix="card-ocr-", suffix=".jpg", delete=False)
     path = handle.name
     handle.close()
     try:
         image.save(path, format="JPEG", quality=90)
-        if engine == "ocrmac":
-            from ocrmac import ocrmac
-
-            rows = ocrmac.OCR(path, language_preference=["zh-Hans", "en-US"]).recognize()
-            return "\n".join(str(item[0]).strip() for item in rows if item and str(item[0]).strip())
-        return pyobjc_text(path)
+        return [(line, 1.0, (0.0, index, 1.0, 1.0)) for index, line in enumerate(reversed(pyobjc_text(path).splitlines()))]
     finally:
         Path(path).unlink(missing_ok=True)
 

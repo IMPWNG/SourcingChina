@@ -39,17 +39,16 @@ npm run lint
 
 These two commands stay on your computer. Put `MAMMOUTH_API_KEY` and the Supabase URL and secret in `.env.local`. That file is gitignored.
 
-The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). It runs `scripts/read_cards.py`. Install that reader once:
+The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). It runs `scripts/read_cards.py`. On a Mac, install Apple Vision once. Paddle is not required.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-cards.txt
+pip install ocrmac
+npm run cards -- ./business-card --out cards.json
 ```
 
-The first OCR downloads the PaddleOCR Chinese and English models. Sideways cards are rotated until the text is horizontal. On macOS, HEIC and HEIF files are converted with `sips` before they are read. An image smaller than 200 pixels on either side is rejected, and the rest of the folder still runs. The OCR text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`) to separate the Chinese company name, the English company name, the person, and the job title. A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the fields it can see in the OCR text and skips the crawl.
-
-If PaddleOCR will not install, a Mac can use Vision instead: `pip install ocrmac`. The same `npm run cards` command uses it when PaddleOCR is missing.
+`pip install -r requirements-cards.txt` installs the same `ocrmac` package. When PaddleOCR is not installed, `npm run cards` reads the photo with Apple Vision. Sideways cards are rotated until the text is horizontal. HEIC and HEIF files are converted with `sips` before they are read. An image smaller than 200 pixels on either side is rejected, and the rest of the folder still runs. The OCR text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`) to separate the Chinese company name, the English company name, the person, and the job title. A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the fields it can see in the OCR text and skips the crawl.
 
 The second command reads that JSON and upserts companies and products in Supabase. A matching website, or the Chinese and English names when there is no website, updates the existing row. New companies stay unpublished. If the Supabase URL or secret is missing, the command prints the variable names and exits.
 
