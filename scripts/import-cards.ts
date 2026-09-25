@@ -6,6 +6,7 @@ import { missingSupabaseKeys, parseCardBatch, supabaseKeyMessage, type CardCompa
 import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { translateCard } from "@/lib/translate";
 import { loadEnvLocal } from "./load-env";
+import { withSupabaseRetry } from "./supabase-retry";
 
 function scrapeStatus(reason: CatalogReason): "succeeded" | "failed" | "skipped" | "never" {
   if (reason === "saved" || reason === "empty") return "succeeded";
@@ -60,28 +61,30 @@ export async function upsertCompany(
   card: CardRecord,
   scrape: ReturnType<typeof scrapeStatus> = scrapeStatus(card.catalog),
 ): Promise<string> {
-  const existing = await findCompany(supabase, card.company);
-  const status = scrape;
-  const patch = {
-    ...filledCompany(card.company),
-    last_scrape_status: status,
-    last_scraped_at: status === "never" ? null : new Date().toISOString(),
-  };
-  if (existing) {
-    const updated = await supabase.from("companies").update(patch).eq("id", existing).select("id").single();
-    if (updated.error) throw new Error(updated.error.message);
-    await upsertContact(supabase, existing, card.company);
-    return existing;
-  }
-  const inserted = await supabase
-    .from("companies")
-    .insert({ ...patch, is_published: false })
-    .select("id")
-    .single();
-  if (inserted.error) throw new Error(inserted.error.message);
-  const id = (inserted.data as { id: string }).id;
-  await upsertContact(supabase, id, card.company);
-  return id;
+  return withSupabaseRetry("upsert company", async () => {
+    const existing = await findCompany(supabase, card.company);
+    const status = scrape;
+    const patch = {
+      ...filledCompany(card.company),
+      last_scrape_status: status,
+      last_scraped_at: status === "never" ? null : new Date().toISOString(),
+    };
+    if (existing) {
+      const updated = await supabase.from("companies").update(patch).eq("id", existing).select("id").single();
+      if (updated.error) throw new Error(updated.error.message);
+      await upsertContact(supabase, existing, card.company);
+      return existing;
+    }
+    const inserted = await supabase
+      .from("companies")
+      .insert({ ...patch, is_published: false })
+      .select("id")
+      .single();
+    if (inserted.error) throw new Error(inserted.error.message);
+    const id = (inserted.data as { id: string }).id;
+    await upsertContact(supabase, id, card.company);
+    return id;
+  });
 }
 
 async function upsertContact(supabase: SupabaseClient, companyId: string, company: CardCompanyRecord): Promise<void> {
@@ -108,6 +111,7 @@ async function upsertContact(supabase: SupabaseClient, companyId: string, compan
 }
 
 export async function upsertProducts(supabase: SupabaseClient, companyId: string, card: CardRecord): Promise<number> {
+  return withSupabaseRetry("upsert products", async () => {
   if (!card.products.length) return 0;
   const slugs = [...new Set(card.products.map((item) => item.category).filter((item): item is string => Boolean(item)))];
   const categories = slugs.length
@@ -149,6 +153,7 @@ export async function upsertProducts(supabase: SupabaseClient, companyId: string
     if (joined.error) throw new Error(joined.error.message);
   }
   return count;
+  });
 }
 
 async function main(): Promise<void> {
