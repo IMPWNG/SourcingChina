@@ -1,6 +1,7 @@
 import robotsParser from "robots-parser";
 import { SAMPLE_SUPPLIER_HTML } from "@/lib/enrichment/fixture";
 import { extractFromHtml, sameHost, type ExtractedPage } from "@/lib/enrichment/extract";
+import { scraplingCrawl } from "@/lib/scrapling/crawl";
 
 export const SCRAPER_UA = "SourcingChinaBot/0.1 (+https://sourcingchina.example/bot; directory enrichment)";
 const MAX_PAGES = 10;
@@ -94,9 +95,30 @@ export async function crawlWebsite(website: string, fetchImpl: FetchLike = fetch
     return { status: "skipped", error: "robots", pages: [], patch: null };
   }
 
+  const pages: CrawlResult["pages"] = [];
+
+  if (fetchImpl === fetch) {
+    try {
+      const fetched = await scraplingCrawl({
+        start: start.toString(),
+        maxPages: MAX_PAGES,
+        maxDepth: 2,
+        timeoutSec: 8,
+        budgetMs: 45_000,
+      });
+      for (const page of fetched) {
+        if (!sameHost(page.url, start.toString())) continue;
+        pages.push({ url: page.url, extracted: extractFromHtml(page.html, page.url) });
+      }
+    } catch {
+      return { status: "failed", error: "fetch_failed", pages: [], patch: null };
+    }
+    if (!pages.length) return { status: "failed", error: "no_html", pages: [], patch: null };
+    return { status: "succeeded", error: null, pages, patch: merged(pages) };
+  }
+
   const queue = [start.toString()];
   const seen = new Set<string>();
-  const pages: CrawlResult["pages"] = [];
 
   while (queue.length && pages.length < MAX_PAGES) {
     const url = queue.shift()!;

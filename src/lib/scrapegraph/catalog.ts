@@ -5,6 +5,7 @@ import robotsParser from "robots-parser";
 import { SCRAPER_UA } from "@/lib/enrichment/crawl";
 import { logInfo } from "@/lib/log";
 import { mammouthConfig, mammouthJson } from "@/lib/mammouth/client";
+import { scraplingCrawl } from "@/lib/scrapling/crawl";
 import {
   PRODUCT_CRAWL_MS,
   PRODUCT_DEPTH,
@@ -101,22 +102,17 @@ async function allowed(url: string): Promise<boolean> {
 async function collectPages(start: string, deadline: number): Promise<SitePage[]> {
   if (!(await allowed(start))) return [];
   const origin = bareHost(start);
-  const queue: { url: string; depth: number }[] = [{ url: start, depth: 0 }];
-  const seen = new Set<string>();
+  const fetched = await scraplingCrawl({
+    start,
+    maxPages: PRODUCT_PAGE_LIMIT,
+    maxDepth: PRODUCT_DEPTH,
+    timeoutSec: 8,
+    budgetMs: Math.max(1000, deadline - Date.now()),
+  });
   const pages: SitePage[] = [];
-  while (queue.length && pages.length < PRODUCT_PAGE_LIMIT && Date.now() < deadline) {
-    const next = queue.shift();
-    if (!next || seen.has(next.url)) continue;
-    seen.add(next.url);
-    let response: Response;
-    try {
-      response = await fetchDocument(next.url, 8000);
-    } catch {
-      continue;
-    }
-    const finalUrl = response.url || next.url;
-    if (!response.ok || bareHost(finalUrl) !== origin) continue;
-    const html = (await response.text()).slice(0, 500_000);
+  for (const page of fetched) {
+    if (bareHost(page.url) !== origin) continue;
+    const html = page.html.slice(0, 500_000);
     const $ = cheerio.load(html);
     const images = new Set<string>();
     $("img").each((_, el) => {
@@ -133,25 +129,7 @@ async function collectPages(start: string, deadline: number): Promise<SitePage[]
     });
     $("script,style,noscript").remove();
     const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 20_000);
-    if (text.length >= 40) pages.push({ url: finalUrl, text, images: [...images].slice(0, 24) });
-    if (next.depth >= PRODUCT_DEPTH) continue;
-    const productLinks: { url: string; depth: number }[] = [];
-    const otherLinks: { url: string; depth: number }[] = [];
-    $("a[href]").each((_, el) => {
-      const href = $(el).attr("href") ?? "";
-      try {
-        const url = new URL(href, finalUrl);
-        if (bareHost(url.toString()) !== origin || !/^https?:$/.test(url.protocol)) return;
-        url.hash = "";
-        const item = { url: url.toString(), depth: next.depth + 1 };
-        if (/h-col-|sys-pr|\/products?/i.test(url.pathname + url.search)) productLinks.push(item);
-        else otherLinks.push(item);
-      } catch {
-        return;
-      }
-    });
-    queue.unshift(...productLinks.slice(0, 8));
-    queue.push(...otherLinks.slice(0, 6));
+    if (text.length >= 40) pages.push({ url: page.url, text, images: [...images].slice(0, 24) });
   }
   return pages;
 }

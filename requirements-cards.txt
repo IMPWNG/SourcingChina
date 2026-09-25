@@ -1,3 +1,4 @@
 # macOS card reading uses Apple Vision. Paddle is not required.
 ocrmac
 Pillow
+scrapling[fetchers]
