@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent } from "react";
+import { FormEvent, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ export function DirectorySearch({
   labels: Messages;
 }) {
   const router = useRouter();
+  const [pending, startTransition] = useTransition();
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,18 +40,23 @@ export function DirectorySearch({
     }
     if (data.get("hasEmail") === "on") params.set("hasEmail", "1");
     if (data.get("hasWebsite") === "on") params.set("hasWebsite", "1");
-    router.push(params.size ? `/directory?${params}` : "/directory");
+    const href = params.size ? `/directory?${params}` : "/directory";
+    startTransition(() => router.replace(href));
+  }
+
+  function apply(event: FormEvent<HTMLSelectElement | HTMLInputElement>) {
+    event.currentTarget.form?.requestSubmit();
   }
 
   const fields = (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4" aria-busy={pending} data-pending={pending ? "" : undefined}>
       <div className="space-y-2">
         <Label htmlFor="q">{labels.searchLabel}</Label>
         <Input id="q" name="q" defaultValue={initial.q ?? ""} placeholder={labels.searchPlaceholder} />
       </div>
       <div className="space-y-2">
         <Label htmlFor="category">{labels.category}</Label>
-        <select id="category" name="category" defaultValue={initial.category ?? ""} className={selectClass}>
+        <select id="category" name="category" defaultValue={initial.category ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyCategory}</option>
           {categories.map((category) => (
             <option key={category.id} value={category.slug}>
@@ -61,7 +67,7 @@ export function DirectorySearch({
       </div>
       <div className="space-y-2">
         <Label htmlFor="companyType">{labels.companyType}</Label>
-        <select id="companyType" name="companyType" defaultValue={initial.companyType ?? ""} className={selectClass}>
+        <select id="companyType" name="companyType" defaultValue={initial.companyType ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyType}</option>
           <option value="factory">{companyTypeLabel("factory", locale)}</option>
           <option value="trading">{companyTypeLabel("trading", locale)}</option>
@@ -71,7 +77,7 @@ export function DirectorySearch({
       </div>
       <div className="space-y-2">
         <Label htmlFor="province">{labels.province}</Label>
-        <select id="province" name="province" defaultValue={initial.province ?? ""} className={selectClass}>
+        <select id="province" name="province" defaultValue={initial.province ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyProvince}</option>
           {provinces.map((province) => (
             <option key={province} value={province}>
@@ -82,7 +88,7 @@ export function DirectorySearch({
       </div>
       <div className="space-y-2">
         <Label htmlFor="city">{labels.city}</Label>
-        <select id="city" name="city" defaultValue={initial.city ?? ""} className={selectClass}>
+        <select id="city" name="city" defaultValue={initial.city ?? ""} className={selectClass} onChange={apply}>
           <option value="">{labels.anyCity}</option>
           {cities.map((city) => (
             <option key={city} value={city}>
@@ -92,11 +98,11 @@ export function DirectorySearch({
         </select>
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="hasEmail" defaultChecked={initial.hasEmail} />
+        <input type="checkbox" name="hasEmail" defaultChecked={initial.hasEmail} onChange={apply} />
         {labels.hasEmail}
       </label>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="hasWebsite" defaultChecked={initial.hasWebsite} />
+        <input type="checkbox" name="hasWebsite" defaultChecked={initial.hasWebsite} onChange={apply} />
         {labels.hasWebsite}
       </label>
       <div className="flex gap-2">

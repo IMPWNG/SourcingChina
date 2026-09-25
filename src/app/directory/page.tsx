@@ -36,22 +36,18 @@ export default async function DirectoryPage({
     hasEmail: one("hasEmail") === "1",
     hasWebsite: one("hasWebsite") === "1",
   };
-  const [categories, companies, t, locale] = await Promise.all([
+  const [categories, companies, places, t, locale] = await Promise.all([
     directory.listCategories(),
     directory.search(filters),
+    directory.listPlaces(),
     getMessages(),
     getLocale(),
   ]);
-  const all = filters.q || filters.category || filters.companyType || filters.province || filters.city || filters.hasEmail || filters.hasWebsite
-    ? await directory.search({})
-    : companies;
-  const provinceOptions = Array.from(new Set(all.map((company) => company.province).filter(Boolean) as string[])).sort();
-  const cityOptions = Array.from(new Set(all.map((company) => company.city).filter(Boolean) as string[])).sort();
 
   return (
     <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:grid-cols-[260px_1fr]">
       <aside className="md:sticky md:top-6 md:self-start">
-        <DirectorySearch categories={categories} provinces={provinceOptions} cities={cityOptions} initial={filters} locale={locale} labels={t} />
+        <DirectorySearch categories={categories} provinces={places.provinces} cities={places.cities} initial={filters} locale={locale} labels={t} />
       </aside>
       <section className="space-y-4">
         {params.access === "demo" ? (

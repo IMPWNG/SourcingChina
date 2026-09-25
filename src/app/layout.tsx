@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     default: "SourcingChina",
     template: "%s · SourcingChina",
   },
-  description: "A reviewed directory of Chinese motorcycle-industry factories, trading companies, and brands.",
+  description: "A reviewed directory of motorcycle suppliers in China: factories, trading companies, and brands.",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

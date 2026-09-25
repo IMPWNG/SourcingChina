@@ -1,22 +1,12 @@
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-
-export default function Loading() {
+export default function DirectoryLoading() {
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:grid-cols-[240px_1fr]">
-      <Skeleton className="hidden h-80 md:block" />
+    <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:grid-cols-[260px_1fr]" aria-busy="true" aria-label="Loading directory">
+      <div className="hidden h-80 rounded-lg bg-muted md:block" />
       <div className="space-y-3">
-        <Skeleton className="h-8 w-48" />
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index}>
-            <CardHeader>
-              <Skeleton className="h-5 w-56" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-4 w-full" />
-            </CardContent>
-          </Card>
-        ))}
+        <div className="h-8 w-40 rounded bg-muted" />
+        <div className="h-24 rounded-lg bg-muted" />
+        <div className="h-24 rounded-lg bg-muted" />
+        <div className="h-24 rounded-lg bg-muted" />
       </div>
     </main>
   );

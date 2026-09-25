@@ -13,6 +13,7 @@ function store() {
 export const directory = {
   listCategories: () => store().listCategories(),
   search: (filters: DirectoryFilters) => store().search(filters),
+  listPlaces: () => store().listPlaces(),
   getPublished: (id: string) => store().getPublished(id),
   adminList: (status: "all" | "draft" | "published") => store().adminList(status),
   adminGet: (id: string) => store().adminGet(id),

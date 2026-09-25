@@ -25,13 +25,13 @@ export async function SiteHeader() {
           {t.demo}
         </p>
       ) : null}
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4">
-        <Link href="/" className="font-semibold tracking-tight">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4">
+        <Link href="/" className="text-sm font-semibold tracking-tight">
           SourcingChina
         </Link>
-        <nav className="hidden items-center gap-5 text-sm md:flex" aria-label="Main">
+        <nav className="hidden items-center gap-5 text-sm text-muted-foreground md:flex" aria-label="Main">
           {links.map((link) => (
-            <Link key={link.href} href={link.href} className="text-muted-foreground hover:text-foreground">
+            <Link key={link.href} href={link.href} className="hover:text-foreground">
               {link.label}
             </Link>
           ))}

@@ -318,6 +318,14 @@ export const demoStore = {
     const db = await readDb();
     return db.categories;
   },
+  async listPlaces() {
+    const db = await readDb();
+    const published = db.companies.filter((company) => company.is_published && !company.merged_into_id);
+    return {
+      provinces: [...new Set(published.map((company) => company.province).filter(Boolean) as string[])].sort(),
+      cities: [...new Set(published.map((company) => company.city).filter(Boolean) as string[])].sort(),
+    };
+  },
   async search(filters: DirectoryFilters): Promise<DirectoryCompany[]> {
     const db = await readDb();
     return db.companies

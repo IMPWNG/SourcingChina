@@ -193,12 +193,27 @@ export const supabaseStore = {
     const companies = rows
       .map((row) => asCompany(row, cats.get(String(row.id)) ?? []))
       .filter((company) => searchable(company, slugById, filters));
-    return Promise.all(
-      companies.map(async (company) => ({
-        ...company,
-        ...(await relations(supabase, company.id, true)),
-      })),
-    );
+    const empty = { families: [], products: [], certifications: [], factories: [], contacts: [] };
+    return companies.map((company) => ({ ...company, ...empty }));
+  },
+  async listPlaces() {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("companies")
+      .select("province, city")
+      .eq("is_published", true)
+      .is("merged_into_id", null);
+    fail(error);
+    const provinces = new Set<string>();
+    const cities = new Set<string>();
+    for (const row of data ?? []) {
+      if (row.province) provinces.add(row.province);
+      if (row.city) cities.add(row.city);
+    }
+    return {
+      provinces: [...provinces].sort(),
+      cities: [...cities].sort(),
+    };
   },
   async getPublished(id: string) {
     const supabase = await createClient();
