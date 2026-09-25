@@ -1,9 +1,10 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { keepPrintedContacts, parseCardArgs, type CardCompanyRecord, type CardRecord } from "@/lib/cards/batch";
+import { cardImageForOcr } from "@/lib/cards/image";
 import type { CardExtraction } from "@/lib/domain";
 import { extractCard } from "@/lib/domain";
-import { recognizeImage } from "@/lib/ocr";
+import { recognizeImage, shutdownOcr } from "@/lib/ocr";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { extractCardWithScrapeGraph } from "@/lib/scrapegraph/extract";
 import { mammouthConfig } from "@/lib/mammouth/client";
@@ -12,15 +13,6 @@ import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { loadEnvLocal } from "./load-env";
 
 const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"]);
-
-const MIME: Record<string, string> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".heic": "image/heic",
-  ".heif": "image/heif",
-};
 
 function companyFrom(extraction: CardExtraction): CardCompanyRecord {
   return {
@@ -55,10 +47,30 @@ async function imagePaths(input: string): Promise<string[]> {
   return [input];
 }
 
+function unreadCard(file: string, ocrError: string): CardRecord {
+  return {
+    source: file,
+    ocr_text: null,
+    ocr_error: ocrError,
+    mammouth_error: null,
+    company: companyFrom(extractCard("")),
+    products: [],
+    catalog: "no_website",
+  };
+}
+
 async function readCard(file: string): Promise<CardRecord> {
   const ext = path.extname(file).toLowerCase();
-  const bytes = await readFile(file);
-  const ocr = await recognizeImage(bytes, MIME[ext] ?? "application/octet-stream");
+  const original = await readFile(file);
+  let prepared: { bytes: Buffer; mime: string };
+  try {
+    prepared = await cardImageForOcr(original, ext);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not convert this photo.";
+    console.error(`${file}: ${message}`);
+    return unreadCard(file, message);
+  }
+  const ocr = await recognizeImage(prepared.bytes, prepared.mime);
   const ocrError =
     ocr.provider === "tesseract_error"
       ? "The photo could not be read."
@@ -118,13 +130,23 @@ async function main(): Promise<void> {
     console.error("MAMMOUTH_API_KEY is not set. Cards will keep the OCR text and sites will not be crawled.");
   }
   const cards: CardRecord[] = [];
-  for (const file of files) {
-    console.error(`Reading ${file}`);
-    cards.push(await readCard(file));
+  try {
+    for (const file of files) {
+      console.error(`Reading ${file}`);
+      try {
+        cards.push(await readCard(file));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The photo could not be read.";
+        console.error(`${file}: ${message}`);
+        cards.push(unreadCard(file, message));
+      }
+    }
+    const batch = { generated_at: new Date().toISOString(), cards };
+    await writeFile(parsed.out, `${JSON.stringify(batch, null, 2)}\n`);
+    console.log(`Wrote ${cards.length} card${cards.length === 1 ? "" : "s"} to ${parsed.out}`);
+  } finally {
+    await shutdownOcr();
   }
-  const batch = { generated_at: new Date().toISOString(), cards };
-  await writeFile(parsed.out, `${JSON.stringify(batch, null, 2)}\n`);
-  console.log(`Wrote ${cards.length} card${cards.length === 1 ? "" : "s"} to ${parsed.out}`);
 }
 
 main().catch((error: unknown) => {

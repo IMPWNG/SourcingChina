@@ -93,6 +93,19 @@ function exclusive<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** Stop the OCR worker so a command-line run can exit. */
+export async function shutdownOcr(): Promise<void> {
+  const pending = workerPromise;
+  workerPromise = null;
+  if (!pending) return;
+  try {
+    const worker = await pending;
+    await worker.terminate();
+  } catch {
+    // The worker failed before it started.
+  }
+}
+
 /** Read a card photo with Tesseract (English + simplified Chinese). Never calls Google Vision. */
 export async function recognizeImage(bytes: Buffer, mime: string): Promise<CardOcr> {
   try {

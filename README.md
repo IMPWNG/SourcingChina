@@ -39,7 +39,7 @@ npm run lint
 
 These two commands stay on your computer. Put `MAMMOUTH_API_KEY` and the Supabase URL and secret in `.env.local`. That file is gitignored.
 
-The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). Tesseract reads Chinese and English. That text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`). A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the OCR text and skips the crawl.
+The first command reads every jpg, png, webp, or heic photo in a folder (or the photo paths you list). HEIC and HEIF files are converted to JPEG before Tesseract reads them; a photo that cannot be converted is recorded with an error and the rest of the folder still runs. Tesseract reads Chinese and English. That text goes to Mammouth (`gpt-4.1-nano`, `https://api.mammouth.ai/v1`). A website is crawled for products only when it is printed on the card. The command writes one JSON file with the company fields and products. It does not invent a website, phone, or email. If the Mammouth key is missing, it keeps the OCR text and skips the crawl.
 
 The second command reads that JSON and upserts companies and products in Supabase. A matching website, or the Chinese and English names when there is no website, updates the existing row. New companies stay unpublished. If the Supabase URL or secret is missing, the command prints the variable names and exits.
 
