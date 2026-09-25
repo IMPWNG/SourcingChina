@@ -81,7 +81,7 @@ export default async function DirectoryPage({
                     <h2 className="font-medium">{title(company) || t.unnamed}</h2>
                     <Badge variant="outline">{companyTypeLabel(company.company_type, locale)}</Badge>
                   </div>
-                  {company.name_zh ? <p className="mt-1 text-sm text-muted-foreground">{company.name_zh}</p> : null}
+                  {company.name_zh && !company.name_en ? <p className="mt-1 text-sm text-muted-foreground">{company.name_zh}</p> : null}
                   <p className="mt-2 text-sm text-muted-foreground">
                     {[company.city, company.province].filter(Boolean).join(", ") || t.locationMissing}
                   </p>

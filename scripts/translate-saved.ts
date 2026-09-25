@@ -10,6 +10,7 @@ type CompanyRow = {
   name_en: string | null;
   address: string | null;
   city: string | null;
+  brand: string | null;
 };
 
 async function withRetry<T>(label: string, run: () => Promise<T>): Promise<T> {
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
   }
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const companies = await withRetry("companies", async () => {
-    const result = await supabase.from("companies").select("id, name_zh, name_en, address, city");
+    const result = await supabase.from("companies").select("id, name_zh, name_en, address, city, brand");
     if (result.error) throw new Error(result.error.message);
     return (result.data ?? []) as CompanyRow[];
   });
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
     });
     const card = {
       source: company.id,
-      company: { address: company.address, city: company.city, contact_title: null },
+      company: { address: company.address, city: company.city, brand: company.brand, contact_title: null },
       products: rows.map((row) => ({
         name: row.name,
         description: row.description,
@@ -55,11 +56,18 @@ async function main(): Promise<void> {
       })),
     } as CardRecord;
     await translateCard(card);
+    const sample = card.products[0]?.details.name_en;
+    if (rows.length && !sample) throw new Error(`No English product name saved for ${company.name_en || company.id}`);
     for (const [index, row] of rows.entries()) {
       const next = card.products[index];
       if (!next) continue;
-      const updated = await supabase.from("products").update({ details: next.details }).eq("id", row.id);
-      if (updated.error) throw new Error(updated.error.message);
+      const updated = await withRetry("update", async () => {
+        const result = await supabase.from("products").update({ details: next.details }).eq("id", row.id);
+        if (result.error) throw new Error(result.error.message);
+        return result;
+      });
+      void updated;
+      console.log(`${row.name} => ${next.details.name_en}`);
     }
     console.log(`${company.name_en || company.name_zh || company.id}: ${rows.length} products translated`);
   }

@@ -42,8 +42,7 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
           <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
           <Badge variant="outline">{companyTypeLabel(company.company_type, locale)}</Badge>
         </div>
-        {company.name_zh && company.name_en ? <p className="text-muted-foreground">{company.name_zh}</p> : null}
-        {company.brand ? <p className="text-sm">{t.brand}: {company.brand}</p> : null}
+        {company.brand ? <p className="text-sm">{t.brand}: {translated(shared, "brand", locale, company.brand)}</p> : null}
       </header>
       <div className="flex flex-wrap gap-2">
         {company.category_ids.map((categoryId) => {

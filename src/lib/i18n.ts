@@ -202,7 +202,12 @@ export function companyTypeLabel(type: string, locale: Locale): string {
   return companyTypes[type]?.[locale] ?? type;
 }
 
-export function translated(details: Record<string, string>, key: "name" | "description" | "address" | "city", locale: Locale, fallback: string | null): string | null {
+export function translated(
+  details: Record<string, string>,
+  key: "name" | "description" | "address" | "city" | "brand",
+  locale: Locale,
+  fallback: string | null,
+): string | null {
   const value = details[`${key}_${locale}`];
   return value || fallback;
 }
@@ -218,4 +223,6 @@ export const HIDDEN_DETAIL_KEYS = new Set([
   "city_fr",
   "title_en",
   "title_fr",
+  "brand_en",
+  "brand_fr",
 ]);

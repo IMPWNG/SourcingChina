@@ -4,7 +4,7 @@ import type { CardRecord } from "@/lib/cards/batch";
 import { mammouthJson } from "@/lib/mammouth/client";
 
 const SYSTEM =
-  "You translate supplier facts into English and French. Reply with one JSON object only: {\"items\":[{\"id\":\"\",\"en\":\"\",\"fr\":\"\"}]}. Keep company names, people names, phone numbers, emails, and URLs unchanged. Translate addresses, cities, job titles, and product names and descriptions. Do not invent facts.";
+  "You translate supplier facts into English and French. Reply with one JSON object only: {\"items\":[{\"id\":\"address\",\"en\":\"English text\",\"fr\":\"Texte français\"}]}. Each en and fr value must be the translation of that line, not an empty string. Keep person names, phone numbers, emails, and URLs unchanged. Translate Chinese addresses, cities, brands, job titles, and product names and descriptions. Do not invent facts.";
 
 type Item = { id?: unknown; en?: unknown; fr?: unknown };
 
@@ -20,14 +20,15 @@ export async function translateCard(card: CardRecord): Promise<void> {
   push("address", card.company.address);
   push("city", card.company.city);
   push("title", card.company.contact_title);
+  push("brand", card.company.brand);
   card.products.forEach((product, index) => {
-    push(`name:${index}`, product.name);
-    push(`description:${index}`, product.description);
+    push(`name-${index}`, product.name);
+    push(`description-${index}`, product.description?.slice(0, 500) ?? null);
   });
   if (!lines.length) return;
   const result = await mammouthJson({
     system: SYSTEM,
-    user: lines.map((line) => `${line.id}: ${line.text}`).join("\n"),
+    user: lines.map((line) => `${line.id} | ${line.text}`).join("\n"),
   });
   if (!result.ok) {
     console.error(`translation skipped: ${result.error}`);
@@ -45,7 +46,7 @@ export async function translateCard(card: CardRecord): Promise<void> {
     if (id && en && fr) byId.set(id, { en, fr });
   }
   const shared: Record<string, string> = {};
-  for (const key of ["address", "city", "title"] as const) {
+  for (const key of ["address", "city", "title", "brand"] as const) {
     const hit = byId.get(key);
     if (hit) {
       shared[`${key}_en`] = hit.en;
@@ -53,8 +54,8 @@ export async function translateCard(card: CardRecord): Promise<void> {
     }
   }
   card.products = card.products.map((product, index) => {
-    const name = byId.get(`name:${index}`);
-    const description = byId.get(`description:${index}`);
+    const name = byId.get(`name-${index}`) ?? byId.get(`name${index}`) ?? byId.get(`name:${index}`);
+    const description = byId.get(`description-${index}`) ?? byId.get(`description${index}`) ?? byId.get(`description:${index}`);
     return {
       ...product,
       details: {
