@@ -77,10 +77,14 @@ test("a card batch parses company fields and products", () => {
         company,
         products: [{ name: "Full-face helmet", description: "Street shell", category: "helmets", image_url: "https://apexride.example/a.jpg" }],
         catalog: "saved",
+        wechat_qr_path: "data/card-qr/front-0.jpg",
+        qr_payloads: ["https://u.wechat.com/abc"],
       },
     ],
   });
   assert.equal(batch?.cards[0]?.products[0]?.name, "Full-face helmet");
   assert.equal(batch?.cards[0]?.products[0]?.category, "helmets");
+  assert.equal(batch?.cards[0]?.wechat_qr_path, "data/card-qr/front-0.jpg");
+  assert.deepEqual(batch?.cards[0]?.qr_payloads, ["https://u.wechat.com/abc"]);
   assert.equal(parseCardBatch({ cards: "nope" }), null);
 });

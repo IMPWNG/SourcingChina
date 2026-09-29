@@ -44,6 +44,7 @@ async function saveCardThenCrawl(cards: CardRecord[]): Promise<{ dbOk: boolean }
     if (supabase && dbOk) {
       try {
         companyId = await upsertCompany(supabase, { ...card, products: [] }, sites.length ? "never" : "skipped");
+        if (card.wechat_qr_path) console.log(`${card.source}: WeChat QR saved`);
         console.log(`${card.source}: saved company ${companyId}`);
       } catch (error) {
         dbOk = false;

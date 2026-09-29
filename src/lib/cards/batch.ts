@@ -39,6 +39,8 @@ export type CardRecord = {
   company: CardCompanyRecord;
   products: CardProductRecord[];
   catalog: CatalogReason;
+  wechat_qr_path?: string | null;
+  qr_payloads?: string[];
 };
 
 export type CardBatch = {
@@ -162,6 +164,8 @@ export function parseCardBatch(value: unknown): CardBatch | null {
       company,
       products: productsOf(card.products),
       catalog: catalog && CATALOGS.has(catalog as CatalogReason) ? (catalog as CatalogReason) : "failed",
+      wechat_qr_path: blank(card.wechat_qr_path),
+      qr_payloads: stringList(card.qr_payloads),
     });
   }
   return { generated_at: blank(record.generated_at) ?? new Date(0).toISOString(), cards };
