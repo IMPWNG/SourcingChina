@@ -18,6 +18,7 @@ import {
   productsFromPage,
   productsListedOnPage,
   uniqueProducts,
+  urlsFromModelPick,
   type CatalogReason,
   type ScrapedProduct,
 } from "@/lib/scrapegraph/products";
@@ -49,15 +50,18 @@ export function emptySiteFill(): SiteFill {
   };
 }
 
+const CRAWL_PICK_SYSTEM =
+  'You pick pages on a supplier website to open for a sourcing directory. Reply JSON only: {"urls":["https://..."]}. Choose product catalogs, categories, product details, contact, about, factory, and certificate pages. Skip login, cart, language switchers, and duplicates. At most 20 URLs, only from the supplied list.';
+
 const PRODUCT_SYSTEM =
-  "You extract catalog products listed on these supplier pages (helmets, visors, parts, chargers, BMS, model codes like BY-111). Reply with one JSON object only: {\"products\":[{\"name\":\"\",\"description\":\"\",\"image_url\":\"\",\"category\":\"\",\"source_url\":\"\",\"details\":{}}]}. Use only names, descriptions, categories, and image URLs that appear in the supplied pages. source_url must be the page URL. Copy image_url from that page's IMAGES list when a product photo is listed. Do not invent products, prices, SKUs, or stock. Skip navigation, contact, and about-us text.";
+  'You extract catalog products listed on these supplier pages (parts, helmets, chargers, model codes, and other items they sell). Reply with one JSON object only: {"products":[{"name":"","description":"","image_url":"","category":"","source_url":"","details":{}}]}. Use only names, descriptions, categories, and image URLs that appear in the supplied pages. source_url must be the page URL. Copy image_url from that page\'s IMAGES list when a product photo is listed. Do not invent products, prices, SKUs, or stock. Skip navigation, contact, and about-us text.';
 
 type SitePage = { url: string; html: string; text: string; images: string[] };
 
 function pageScore(page: SitePage): number {
   const hay = `${page.url} ${page.text.slice(0, 400)}`;
-  if (/h-col-|sys-pd|product|helmet|catalog|产品/i.test(hay)) return 2;
-  if (/contact|wechat|whatsapp|联系/i.test(hay)) return 1;
+  if (/h-col-|sys-pd|product|goods|item|catalog|shop|collection|helmet|产品|商品/i.test(hay)) return 2;
+  if (/contact|wechat|whatsapp|about|factory|cert|联系|关于/i.test(hay)) return 1;
   return 0;
 }
 
@@ -134,36 +138,97 @@ async function allowed(url: string): Promise<boolean> {
 async function collectPages(start: string, deadline: number): Promise<SitePage[]> {
   if (!(await allowed(start))) return [];
   const origin = bareHost(start);
+  const budget = () => Math.max(1000, deadline - Date.now());
+  const asPages = (fetched: { url: string; html: string }[]) => {
+    const pages: SitePage[] = [];
+    for (const page of fetched) {
+      if (bareHost(page.url) !== origin) continue;
+      const html = page.html.slice(0, 500_000);
+      const $ = cheerio.load(html);
+      const images = new Set<string>();
+      $("img").each((_, el) => {
+        for (const attr of ["src", "data-src", "data-original"]) {
+          const value = $(el).attr(attr);
+          if (value) images.add(value);
+        }
+      });
+      $("[style]").each((_, el) => {
+        const style = $(el).attr("style") ?? "";
+        for (const match of style.matchAll(/url\((['"]?)(.*?)\1\)/g)) {
+          if (match[2]) images.add(match[2]);
+        }
+      });
+      $("script,style,noscript").remove();
+      const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 40_000);
+      if (text.length >= 20 || html.length > 8_000) pages.push({ url: page.url, html, text, images: [...images].slice(0, 40) });
+    }
+    return pages;
+  };
+  if (budget() < 25_000) {
+    const fetched = await scraplingCrawl({
+      start,
+      maxPages: PRODUCT_PAGE_LIMIT,
+      maxDepth: PRODUCT_DEPTH,
+      timeoutSec: 8,
+      budgetMs: budget(),
+    });
+    return asPages(fetched);
+  }
+  const preview = asPages(
+    await scraplingCrawl({
+      start,
+      maxPages: 2,
+      maxDepth: 1,
+      timeoutSec: 8,
+      budgetMs: Math.min(20_000, budget()),
+    }),
+  );
+  const pickMs = Math.min(10_000, budget() - 20_000);
+  let seeds: string[] = [];
+  if (pickMs >= 2500) {
+    const links: { url: string; label: string }[] = [];
+    const seen = new Set<string>();
+    for (const page of preview) {
+      const $ = cheerio.load(page.html);
+      $("a[href]").each((_, el) => {
+        const href = $(el).attr("href") ?? "";
+        const label = $(el).text().replace(/\s+/g, " ").trim().slice(0, 80);
+        try {
+          const url = new URL(href, page.url);
+          if (!["http:", "https:"].includes(url.protocol)) return;
+          url.hash = "";
+          const clean = url.toString();
+          if (bareHost(clean) !== origin || seen.has(clean)) return;
+          seen.add(clean);
+          links.push({ url: clean, label });
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+    if (links.length >= 3) {
+      const picked = await mammouthJson({
+        system: CRAWL_PICK_SYSTEM,
+        user: `SITE: ${start}\n${links
+          .slice(0, 80)
+          .map((link) => `${link.label || "(no label)"} | ${link.url}`)
+          .join("\n")}`,
+        timeoutMs: pickMs,
+      });
+      if (picked.ok) seeds = urlsFromModelPick(picked.json, new URL(start).host);
+    }
+  }
   const fetched = await scraplingCrawl({
     start,
+    seeds,
     maxPages: PRODUCT_PAGE_LIMIT,
     maxDepth: PRODUCT_DEPTH,
     timeoutSec: 8,
-    budgetMs: Math.max(1000, deadline - Date.now()),
+    budgetMs: budget(),
   });
-  const pages: SitePage[] = [];
-  for (const page of fetched) {
-    if (bareHost(page.url) !== origin) continue;
-    const html = page.html.slice(0, 500_000);
-    const $ = cheerio.load(html);
-    const images = new Set<string>();
-    $("img").each((_, el) => {
-      for (const attr of ["src", "data-src", "data-original"]) {
-        const value = $(el).attr(attr);
-        if (value) images.add(value);
-      }
-    });
-    $("[style]").each((_, el) => {
-      const style = $(el).attr("style") ?? "";
-      for (const match of style.matchAll(/url\((['"]?)(.*?)\1\)/g)) {
-        if (match[2]) images.add(match[2]);
-      }
-    });
-    $("script,style,noscript").remove();
-    const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 40_000);
-    if (text.length >= 40) pages.push({ url: page.url, html, text, images: [...images].slice(0, 40) });
-  }
-  return pages;
+  const byUrl = new Map<string, SitePage>();
+  for (const page of [...preview, ...asPages(fetched)]) byUrl.set(page.url, page);
+  return [...byUrl.values()];
 }
 
 export async function scrapeSiteProducts(
@@ -194,9 +259,10 @@ export async function scrapeSiteProducts(
     );
     const packed = [...pages]
       .sort((a, b) => pageScore(b) - pageScore(a))
-      .map((page) => `URL: ${page.url}\nTEXT: ${page.text}\nIMAGES:\n${page.images.join("\n")}`)
+      .slice(0, 12)
+      .map((page) => `URL: ${page.url}\nTEXT: ${page.text.slice(0, 8_000)}\nIMAGES:\n${page.images.join("\n")}`)
       .join("\n\n")
-      .slice(0, 48_000);
+      .slice(0, 80_000);
     const remaining = deadline - Date.now();
     if (remaining < 1_500) {
       logInfo("product_crawl_failed", { error: "budget" });
@@ -238,8 +304,11 @@ export async function scrapeSiteProducts(
     const listedByName = new Map(listed.map((product) => [product.name, product]));
     const grounded = rows.flatMap((product) => {
       const page = pages.find((entry) => entry.url === product.source_url);
-      if (!page || !namePrintedOnPage(product.name, page.text)) return [];
-      const verbatim = product.description && namePrintedOnPage(product.description, page.text) ? productDescription(product.description) : null;
+      if (!page || !namePrintedOnPage(product.name, `${page.text}\n${page.html}`)) return [];
+      const verbatim =
+        product.description && namePrintedOnPage(product.description, `${page.text}\n${page.html}`)
+          ? productDescription(product.description)
+          : null;
       const fallback = listedByName.get(product.name);
       return [{ ...product, description: verbatim ?? fallback?.description ?? null }];
     });

@@ -9,10 +9,15 @@ from scrapling.fetchers import FetcherSession
 from scrapling.parser import Selector
 
 PREFER = re.compile(
-    r"h-col-|sys-p[rd]|/products?|contact|about|helmet|catalog|whatsapp|wechat|联系|产品|关于",
+    r"h-col-|sys-p[rd]|/products?|/product|/goods|/item|/detail|/shop|/store|/collection|/categor|/catalog|/pd[/-]|contact|about|factory|certif|helmet|whatsapp|wechat|联系|产品|商品|系列|关于|工厂|资质",
+    re.I,
+)
+SKIP = re.compile(
+    r"\.(pdf|jpe?g|png|gif|webp|svg|zip|mp4|css|js|xml)(\?|$)|/cart|/login|/signin|/wp-admin|/cdn-cgi|sitemap",
     re.I,
 )
 JS_KEY = re.compile(r'document\.cookie="(jsKey=[^;"]+)')
+LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
 MAX_HTML = 500_000
 
 
@@ -71,7 +76,7 @@ def read_page(session, url: str, timeout: float):
     return 0, url, ""
 
 
-def links_from(html: str, final_url: str, origin: str, depth: int):
+def links_from(html: str, final_url: str, origin: str, depth: int, prefer_exact: set[str]):
     page = Selector(html)
     product, other = [], []
     seen_local: set[str] = set()
@@ -86,28 +91,61 @@ def links_from(html: str, final_url: str, origin: str, depth: int):
         if parsed.scheme not in ("http", "https") or host_of(url) != origin:
             continue
         clean = parsed._replace(fragment="").geturl()
-        if clean in seen_local:
+        if clean in seen_local or SKIP.search(clean):
             continue
         seen_local.add(clean)
         item = {"url": clean, "depth": depth}
         blob = f"{parsed.path}?{parsed.query} {label}"
-        if PREFER.search(blob):
+        if PREFER.search(blob) or clean in prefer_exact:
             product.append(item)
         else:
             other.append(item)
-    return product[:12], other[:6]
+    return product[:24], other[:10]
+
+
+def sitemap_urls(session, start: str, origin: str, timeout: float) -> list[str]:
+    parsed = urlparse(start)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    found: list[str] = []
+    for path in ("/sitemap.xml", "/sitemap_index.xml"):
+        try:
+            status, _final, html = read_page(session, f"{root}{path}", timeout)
+        except Exception:
+            continue
+        if status < 200 or status >= 400 or "<loc>" not in html.lower():
+            continue
+        for loc in LOC.findall(html):
+            if host_of(loc) != origin or SKIP.search(loc):
+                continue
+            if loc not in found:
+                found.append(loc)
+        if found:
+            break
+    product = [url for url in found if PREFER.search(url)]
+    other = [url for url in found if url not in product]
+    return (product + other)[:40]
 
 
 def crawl(spec: dict) -> dict:
     start = spec["start"]
-    max_pages = int(spec.get("max_pages") or 8)
-    max_depth = int(spec.get("max_depth") or 2)
+    max_pages = int(spec.get("max_pages") or 24)
+    max_depth = int(spec.get("max_depth") or 3)
     timeout = float(spec.get("timeout") or 8)
     origin = host_of(start)
+    prefer_exact = {url for url in (spec.get("seeds") or []) if isinstance(url, str) and host_of(url) == origin}
     pages = []
     seen = set()
+    queued = {start}
     queue = [{"url": start, "depth": 0}]
+    for seed in prefer_exact:
+        if seed not in queued:
+            queue.append({"url": seed, "depth": 0})
+            queued.add(seed)
     with FetcherSession(impersonate="chrome", stealthy_headers=True, timeout=timeout) as session:
+        for loc in sitemap_urls(session, start, origin, timeout):
+            if loc not in queued:
+                queue.append({"url": loc, "depth": 1})
+                queued.add(loc)
         while queue and len(pages) < max_pages:
             item = queue.pop(0)
             if item["url"] in seen:
@@ -124,13 +162,15 @@ def crawl(spec: dict) -> dict:
             pages.append({"url": final, "status": status, "html": html})
             if item["depth"] >= max_depth:
                 continue
-            product, other = links_from(html, final, origin, item["depth"] + 1)
+            product, other = links_from(html, final, origin, item["depth"] + 1, prefer_exact)
             for link in reversed(product):
-                if link["url"] not in seen:
+                if link["url"] not in seen and link["url"] not in queued:
                     queue.insert(0, link)
+                    queued.add(link["url"])
             for link in other:
-                if link["url"] not in seen:
+                if link["url"] not in seen and link["url"] not in queued:
                     queue.append(link)
+                    queued.add(link["url"])
     return {"pages": pages, "error": None}
 
 

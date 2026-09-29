@@ -1,12 +1,12 @@
 import { normalizeWebsite } from "@/lib/domain";
 
-export const PRODUCT_PAGE_LIMIT = 8;
-export const PRODUCT_DEPTH = 2;
+export const PRODUCT_PAGE_LIMIT = 24;
+export const PRODUCT_DEPTH = 3;
 export const PRODUCT_LINKS_PER_PAGE = 6;
-export const PRODUCT_CRAWL_MS = 45_000;
-/** Upload returns the draft first. The site crawl on that request stays inside this bound. */
-export const UPLOAD_PRODUCT_CRAWL_MS = 8_000;
-export const PRODUCT_SAVE_LIMIT = 80;
+export const PRODUCT_CRAWL_MS = 120_000;
+/** Admin upload still returns a draft; keep this under a Vercel function. */
+export const UPLOAD_PRODUCT_CRAWL_MS = 45_000;
+export const PRODUCT_SAVE_LIMIT = 120;
 
 export type CatalogReason = "no_key" | "no_website" | "failed" | "empty" | "saved";
 
@@ -73,7 +73,7 @@ function absoluteHttp(value: string | null, base: string): string | null {
   }
 }
 
-const PRODUCTISH = /BMS|充电器|控制器|电池|电机|头盔|盔|灯具|灯|换电|helmet|visor|cycling|jacket|glove/i;
+const PRODUCTISH = /BMS|充电器|控制器|电池|电机|头盔|盔|灯具|灯|换电|helmet|visor|cycling|jacket|glove|engine|brake|fork|tire|tyre|wheel|exhaust|frame/i;
 const ABOUT = /成立于|高新技术|专精特新|专利|深耕|请输入要描述|是国内|头部企业|集成商|投入使用|founded in|high-tech|patents/i;
 const SECTION = /products?$|equipment$|center$|中心$|系列$/i;
 const LISTED_NAV = /^(首页|关于我们|产品中心|解决方案|新闻资讯|联系我们|了解更多|注册|登录|产品|products?)$/i;
@@ -87,13 +87,14 @@ export function namePrintedOnPage(name: string, text: string): boolean {
   return text.replace(/\s+/g, "").toLowerCase().includes(needle);
 }
 
-function isProductName(name: string): boolean {
+function isListedName(name: string, loose = false): boolean {
   const trimmed = name.replace(/^MODEL[:：]\s*/i, "").trim();
   if (trimmed.length < 4 || trimmed.length > 80 || LISTED_NAV.test(trimmed) || NAV_NAME.test(trimmed) || SECTION.test(trimmed)) {
     return false;
   }
   if (/@/.test(trimmed) || GENERIC.test(trimmed) || /model[:：]/i.test(trimmed)) return false;
   if (MODEL_CODE.test(trimmed) && !SKIP_MODEL.test(trimmed)) return true;
+  if (loose) return !ABOUT.test(trimmed) && !/[，。！？]/.test(trimmed);
   if (!PRODUCTISH.test(trimmed)) return false;
   if (/[，。！？、；：]/.test(trimmed) || ABOUT.test(trimmed) || /超力源|运营|arrival|co-?operate/i.test(trimmed)) return false;
   if (!/[\u4e00-\u9fff]/.test(trimmed) && !/\d/.test(trimmed) && trimmed.length < 12) return false;
@@ -132,9 +133,9 @@ export function productsListedOnPage(input: {
 }): ScrapedProduct[] {
   if (!sameSite(input.pageUrl, input.siteHost)) return [];
   const names: string[] = [];
-  const add = (raw: string) => {
+  const add = (raw: string, loose = false) => {
     const name = raw.replace(/^MODEL[:：]\s*/i, "").trim();
-    if (!isProductName(name) || names.includes(name)) return;
+    if (!isListedName(name, loose) || names.includes(name)) return;
     names.push(name);
   };
   const text = input.text.replace(/([A-Z]{2,4}-\d{2,5})(?=[A-Z]{2,4}-|$|[^A-Za-z0-9])/g, " $1 ");
@@ -147,6 +148,12 @@ export function productsListedOnPage(input: {
   const hay = `${input.html ?? ""}\n${text}`;
   for (const match of hay.matchAll(/\b([A-Z]{2,4}-\d{2,5}[A-Z]{0,2})\b/g)) {
     add(match[1]);
+  }
+  for (const name of namesFromJsonLd(input.html ?? "")) add(name, true);
+  if (/product|goods|item|detail|sys-pd|\/pd\/|商品|产品/i.test(input.pageUrl)) {
+    for (const match of (input.html ?? "").matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)) {
+      add(match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim(), true);
+    }
   }
   const listed = names.map((name) => {
     const at = input.text.lastIndexOf(name);
@@ -171,7 +178,52 @@ function guessCategory(name: string, pageUrl: string, text: string): string | nu
   if (/BMS|电池|换电/.test(name) || /BMS|电池/.test(hay)) return "电池";
   if (/充电|控制器|电机/.test(name) || /charger|controller/i.test(hay)) return "电气";
   if (/cycling|骑行|jacket|glove|apparel/i.test(hay)) return "骑行服饰";
+  if (/engine|活塞|发动机/i.test(hay)) return "发动机配件";
+  if (/lamp|light|灯具|headlight/i.test(hay)) return "灯具";
+  if (/tire|tyre|wheel|轮胎|轮毂/i.test(hay)) return "轮胎轮毂";
+  if (/exhaust|排气/i.test(hay)) return "排气";
   return null;
+}
+
+function namesFromJsonLd(html: string): string[] {
+  const names: string[] = [];
+  const walk = (node: unknown) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node !== "object") return;
+    const row = node as Record<string, unknown>;
+    const types = row["@type"];
+    const type = Array.isArray(types) ? types.map(String).join(" ") : String(types ?? "");
+    if (/Product/i.test(type) && typeof row.name === "string") names.push(row.name);
+    walk(row["@graph"]);
+    walk(row.itemListElement);
+    walk(row.item);
+  };
+  for (const match of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      walk(JSON.parse(match[1]!));
+    } catch {
+      /* ignore broken JSON-LD */
+    }
+  }
+  return names;
+}
+
+export function urlsFromModelPick(json: unknown, siteHost: string): string[] {
+  const record = json && typeof json === "object" ? (json as { urls?: unknown }) : {};
+  const list = Array.isArray(record.urls) ? record.urls : [];
+  const urls: string[] = [];
+  for (const item of list) {
+    if (typeof item !== "string") continue;
+    const url = absoluteHttp(item.trim(), `https://${siteHost.replace(/^www\./i, "")}`);
+    if (!url || !sameSite(url, siteHost) || urls.includes(url)) continue;
+    urls.push(url);
+    if (urls.length >= 20) break;
+  }
+  return urls;
 }
 
 function categoryId(

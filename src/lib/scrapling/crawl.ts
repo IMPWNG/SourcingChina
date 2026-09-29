@@ -12,6 +12,7 @@ export function scraplingCrawl(input: {
   maxDepth: number;
   timeoutSec: number;
   budgetMs: number;
+  seeds?: string[];
 }): Promise<ScraplingPage[]> {
   return new Promise((resolve, reject) => {
     const child = spawn(PYTHON, [SCRIPT], { stdio: ["pipe", "pipe", "pipe"] });
@@ -48,6 +49,7 @@ export function scraplingCrawl(input: {
         max_pages: input.maxPages,
         max_depth: input.maxDepth,
         timeout: input.timeoutSec,
+        seeds: input.seeds ?? [],
       }),
     );
   });

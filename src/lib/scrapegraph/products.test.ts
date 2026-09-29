@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, planSiteCrawl, productsFromPage, productsListedOnPage, uniqueProducts } from "./products";
+import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, planSiteCrawl, productsFromPage, productsListedOnPage, uniqueProducts, urlsFromModelPick } from "./products";
 
 const categories = [
   { id: "helmets-id", slug: "helmets", name_en: "Helmets", name_zh: "头盔" },
@@ -9,9 +9,9 @@ const categories = [
   { id: "electrical-id", slug: "electrical", name_en: "Electrical", name_zh: "电气" },
 ];
 
-test("upload crawl stays short enough to return the draft", () => {
-  assert.ok(UPLOAD_PRODUCT_CRAWL_MS <= 8_000);
-  assert.ok(UPLOAD_PRODUCT_CRAWL_MS >= 1_000);
+test("upload crawl stays inside a function budget", () => {
+  assert.ok(UPLOAD_PRODUCT_CRAWL_MS <= 60_000);
+  assert.ok(UPLOAD_PRODUCT_CRAWL_MS >= 8_000);
 });
 
 test("a missing key or missing website skips the crawl", () => {
@@ -102,4 +102,23 @@ test("helmet model codes on a catalog page are kept", () => {
   assert.equal(products.some((item) => item.name === "BY-166"), true);
   assert.equal(products.some((item) => item.name === "Helmet"), false);
   assert.equal(products.find((item) => item.name === "BY-111")?.category_id, "helmets-id");
+});
+
+test("json-ld product names are kept and off-site crawl picks are dropped", () => {
+  const products = productsListedOnPage({
+    text: "Catalog",
+    html: `<script type="application/ld+json">{"@type":"Product","name":"Apex full-face helmet"}</script>`,
+    imageUrls: [],
+    pageUrl: "https://apexride.example/products",
+    siteHost: "apexride.example",
+    categories,
+  });
+  assert.equal(products.some((item) => item.name === "Apex full-face helmet"), true);
+  assert.deepEqual(
+    urlsFromModelPick(
+      { urls: ["https://apexride.example/products", "https://other.example/steal", "/contact"] },
+      "apexride.example",
+    ),
+    ["https://apexride.example/products", "https://apexride.example/contact"],
+  );
 });
