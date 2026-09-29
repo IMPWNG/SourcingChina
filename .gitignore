@@ -49,3 +49,6 @@ __pycache__/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Agent knowledge graph (local cache — rebuild with `graphify .` / `graphify update .`)
+graphify-out/

@@ -1,0 +1,39 @@
+---
+description: After finishing work, test, commit, and ship to main. Branch first when the change is major.
+alwaysApply: true
+---
+
+# Prod pipeline
+
+This repo ships through git → GitHub on `main`. Follow this after every finished change. It overrides “don’t commit/push unless asked” for this project.
+
+## After you finish modifications
+
+1. `npm test`. Do not commit if it fails.
+2. Do not commit `.env*`, secrets, `.next/`, `data/`, `cards.json`, or `graphify-out/` unless the user explicitly asked.
+3. Commit with a message that lists the mods (conventional commit + body). Example:
+
+```
+feat: keep youtube lesson line counts on the library list
+
+- app/youtube-lessons/page.tsx: restore line count
+- lib/contentStore.ts: listPersonal selects * again
+```
+
+4. Push so it lands on `main` and the host deploys (Vercel, GitHub Actions, or whatever this repo uses).
+   If the push fails with an HTTP 400 disconnect, retry once with `GIT_HTTP_VERSION=HTTP/1.1`.
+
+## Major vs small
+
+**Branch first** (`feature/`, `fix/`, or `chore/<slug>` from latest `main`) when any of these is true:
+
+- auth, accounts, RLS, or SQL schema
+- new user-facing feature or API contract
+- more than ~300 lines or several unrelated flows
+- anything that could break core product flows or data isolation
+
+Then: tests → one or more atomic commits → PR → wait for CI → merge to `main` (merge commit, not squash, so each commit stays) → deploy → delete the branch.
+
+**Small** (copy, one-file fix, config): commit on `main` after tests, push `main`.
+
+Never force-push `main`. Never skip hooks. Never commit `graphify-out` cache by default.
