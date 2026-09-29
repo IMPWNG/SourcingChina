@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -73,6 +74,7 @@ export async function upsertCompany(
       const updated = await supabase.from("companies").update(patch).eq("id", existing).select("id").single();
       if (updated.error) throw new Error(updated.error.message);
       await upsertContact(supabase, existing, card.company);
+      await upsertWechatQr(supabase, existing, card.wechat_qr_path);
       return existing;
     }
     const inserted = await supabase
@@ -83,8 +85,31 @@ export async function upsertCompany(
     if (inserted.error) throw new Error(inserted.error.message);
     const id = (inserted.data as { id: string }).id;
     await upsertContact(supabase, id, card.company);
+    await upsertWechatQr(supabase, id, card.wechat_qr_path);
     return id;
   });
+}
+
+export async function upsertWechatQr(
+  supabase: SupabaseClient,
+  companyId: string,
+  localPath: string | null | undefined,
+): Promise<void> {
+  if (!localPath || !existsSync(localPath)) return;
+  const bytes = await readFile(localPath);
+  const storagePath = `wechat-qr/${companyId}.jpg`;
+  const uploaded = await supabase.storage.from("card-images").upload(storagePath, bytes, { contentType: "image/jpeg", upsert: true });
+  if (uploaded.error) throw new Error(uploaded.error.message);
+  const removed = await supabase.from("sources").delete().eq("company_id", companyId).contains("payload", { kind: "wechat_qr" });
+  if (removed.error) throw new Error(removed.error.message);
+  const inserted = await supabase.from("sources").insert({
+    company_id: companyId,
+    source_type: "website",
+    url_or_ref: storagePath,
+    raw_text: null,
+    payload: { kind: "wechat_qr" },
+  });
+  if (inserted.error) throw new Error(inserted.error.message);
 }
 
 async function upsertContact(supabase: SupabaseClient, companyId: string, company: CardCompanyRecord): Promise<void> {

@@ -33,6 +33,7 @@ from scripts.card_fields import (  # noqa: E402
     prepare_ocr_text,
     website_tokens,
 )
+from scripts.card_qr import apply_qr_fields, read_barcodes  # noqa: E402
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 MIN_SIDE = 200
@@ -359,31 +360,38 @@ def unread(path: str, message: str) -> dict[str, Any]:
         "company": fields,
         "products": [],
         "catalog": "no_website",
+        "wechat_qr_path": None,
+        "qr_payloads": [],
     }
 
 
 def read_one(reader: CardReader, path: str) -> dict[str, Any]:
     image = open_photo(path)
+    codes, payloads = read_barcodes(image, path)
     text, width, height, angle = horizontal_text(reader, image)
     text = prepare_ocr_text(text)
     turned = f", rotated {angle}° so the text is horizontal" if angle else ""
-    print(f"Decoded {path} at {width}×{height}{turned}", file=sys.stderr)
-    if not text.strip():
+    found = f", {len(codes)} QR" if codes else ""
+    print(f"Decoded {path} at {width}×{height}{turned}{found}", file=sys.stderr)
+    if not text.strip() and not payloads:
         card = unread(path, "This photo had no readable text.")
         card["ocr_error"] = "This photo had no readable text."
         return card
     local = classify_locally(text)
-    model, error = mammouth_fields(text)
-    fields = apply_model_fields(local, model, text)
+    model, error = mammouth_fields(text) if text.strip() else (None, None)
+    fields = apply_model_fields(local, model, text) if text.strip() else local
+    apply_qr_fields(fields, codes)
     website = fields.get("website")
     return {
         "source": path,
-        "ocr_text": text,
-        "ocr_error": None,
+        "ocr_text": text or None,
+        "ocr_error": None if text.strip() or codes else "This photo had no readable text.",
         "mammouth_error": error,
         "company": company_record(fields),
         "products": [],
         "catalog": "failed" if website else "no_website",
+        "wechat_qr_path": fields.get("wechat_qr_path"),
+        "qr_payloads": payloads,
     }
 
 
@@ -391,12 +399,17 @@ def print_found(card: dict[str, Any], engine: str) -> None:
     text = card.get("ocr_text") or ""
     company = card["company"]
     print(f"ocr_engine: {engine}", file=sys.stderr)
-    for label in ("name_zh", "name_en", "contact_name", "contact_title", "phone", "email", "address"):
+    for label in ("name_zh", "name_en", "contact_name", "contact_title", "phone", "email", "wechat", "address"):
         value = company.get(label)
         if value:
             print(f"{label}: {value}", file=sys.stderr)
+    qr_path = card.get("wechat_qr_path")
+    if qr_path:
+        print(f"wechat_qr: {qr_path}", file=sys.stderr)
     for token in website_tokens(text):
         print(f"website: {token}", file=sys.stderr)
+    for payload in card.get("qr_payloads") or []:
+        print(f"qr: {payload}", file=sys.stderr)
 
 
 def main() -> None:
