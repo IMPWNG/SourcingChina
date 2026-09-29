@@ -7,7 +7,7 @@ import { missingSupabaseKeys, parseCardBatch, supabaseKeyMessage, type CardCompa
 import type { CatalogReason } from "@/lib/scrapegraph/products";
 import { translateCard } from "@/lib/translate";
 import { loadEnvLocal } from "./load-env";
-import { withSupabaseRetry } from "./supabase-retry";
+import { withSupabaseRetry, supabaseFetch } from "./supabase-retry";
 
 function scrapeStatus(reason: CatalogReason): "succeeded" | "failed" | "skipped" | "never" {
   if (reason === "saved" || reason === "empty") return "succeeded";
@@ -54,6 +54,7 @@ async function findCompany(supabase: SupabaseClient, company: CardCompanyRecord)
 export function cardsSupabase(): SupabaseClient {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, (process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)!, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: supabaseFetch },
   });
 }
 

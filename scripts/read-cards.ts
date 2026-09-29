@@ -28,12 +28,7 @@ async function saveCardThenCrawl(cards: CardRecord[]): Promise<{ dbOk: boolean }
   const categories = CATEGORIES.map((item) => ({ id: item.id, slug: item.slug, name_en: item.name_en, name_zh: item.name_zh }));
   const slugById = new Map<string, string>(categories.map((item) => [item.id, item.slug]));
   let dbOk = true;
-  let supabase: ReturnType<typeof cardsSupabase> | null = null;
-  try {
-    supabase = cardsSupabase();
-  } catch {
-    dbOk = false;
-  }
+  let supabase = cardsSupabase();
   for (const card of cards) {
     const sites = cardSites(card);
     if (!sites.length) {
@@ -41,18 +36,15 @@ async function saveCardThenCrawl(cards: CardRecord[]): Promise<{ dbOk: boolean }
       card.products = [];
     }
     let companyId: string | null = null;
-    if (supabase && dbOk) {
-      try {
-        companyId = await upsertCompany(supabase, { ...card, products: [] }, sites.length ? "never" : "skipped");
-        if (card.wechat_qr_path) console.log(`${card.source}: WeChat QR saved`);
-        console.log(`${card.source}: saved company ${companyId}`);
-      } catch (error) {
-        dbOk = false;
-        console.error(error instanceof Error ? error.message : "Could not reach Supabase.");
-        console.error(`${card.source}: continuing with the site crawl into cards.json only.`);
-      }
-    } else {
-      console.error(`${card.source}: Supabase unreachable — crawl will only update the JSON file.`);
+    try {
+      companyId = await upsertCompany(supabase, { ...card, products: [] }, sites.length ? "never" : "skipped");
+      if (card.wechat_qr_path) console.log(`${card.source}: WeChat QR saved`);
+      console.log(`${card.source}: saved company ${companyId}`);
+    } catch (error) {
+      dbOk = false;
+      supabase = cardsSupabase();
+      console.error(error instanceof Error ? error.message : "Could not reach Supabase.");
+      console.error(`${card.source}: this card stays in cards.json; later cards still try Supabase.`);
     }
     if (!sites.length) {
       console.log(`${card.source}: no website on the card, crawl skipped`);
@@ -83,13 +75,14 @@ async function saveCardThenCrawl(cards: CardRecord[]): Promise<{ dbOk: boolean }
     }
     console.log(`${card.source}: translating into English and French`);
     await translateCard(card);
-    if (supabase && dbOk && companyId) {
+    if (companyId) {
       try {
         await upsertCompany(supabase, card);
         const saved = await upsertProducts(supabase, companyId, card);
         console.log(`${card.source}: saved ${saved} product${saved === 1 ? "" : "s"}`);
       } catch (error) {
         dbOk = false;
+        supabase = cardsSupabase();
         console.error(error instanceof Error ? error.message : "Could not save products to Supabase.");
       }
     } else {
