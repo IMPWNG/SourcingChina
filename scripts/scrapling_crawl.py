@@ -8,7 +8,10 @@ from urllib.parse import urljoin, urlparse
 from scrapling.fetchers import FetcherSession
 from scrapling.parser import Selector
 
-PREFER = re.compile(r"h-col-|sys-pr|/products?", re.I)
+PREFER = re.compile(
+    r"h-col-|sys-p[rd]|/products?|contact|about|helmet|catalog|whatsapp|wechat|联系|产品|关于",
+    re.I,
+)
 JS_KEY = re.compile(r'document\.cookie="(jsKey=[^;"]+)')
 MAX_HTML = 500_000
 
@@ -71,7 +74,10 @@ def read_page(session, url: str, timeout: float):
 def links_from(html: str, final_url: str, origin: str, depth: int):
     page = Selector(html)
     product, other = [], []
-    for href in page.css("a::attr(href)").getall():
+    seen_local: set[str] = set()
+    for node in page.css("a"):
+        href = node.attrib.get("href") or ""
+        label = (node.text or "").strip()
         try:
             url = urljoin(final_url, href)
         except ValueError:
@@ -80,12 +86,16 @@ def links_from(html: str, final_url: str, origin: str, depth: int):
         if parsed.scheme not in ("http", "https") or host_of(url) != origin:
             continue
         clean = parsed._replace(fragment="").geturl()
+        if clean in seen_local:
+            continue
+        seen_local.add(clean)
         item = {"url": clean, "depth": depth}
-        if PREFER.search(parsed.path + "?" + parsed.query):
+        blob = f"{parsed.path}?{parsed.query} {label}"
+        if PREFER.search(blob):
             product.append(item)
         else:
             other.append(item)
-    return product[:8], other[:6]
+    return product[:12], other[:6]
 
 
 def crawl(spec: dict) -> dict:

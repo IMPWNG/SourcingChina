@@ -2,7 +2,9 @@ import "server-only";
 
 import * as cheerio from "cheerio";
 import robotsParser from "robots-parser";
-import { SCRAPER_UA } from "@/lib/enrichment/crawl";
+import type { CompanyType } from "@/lib/domain";
+import { mergeExtractedPages, SCRAPER_UA } from "@/lib/enrichment/crawl";
+import { extractFromHtml } from "@/lib/enrichment/extract";
 import { logInfo } from "@/lib/log";
 import { mammouthConfig, mammouthJson } from "@/lib/mammouth/client";
 import { scraplingCrawl } from "@/lib/scrapling/crawl";
@@ -10,6 +12,7 @@ import {
   PRODUCT_CRAWL_MS,
   PRODUCT_DEPTH,
   PRODUCT_PAGE_LIMIT,
+  namePrintedOnPage,
   planSiteCrawl,
   productDescription,
   productsFromPage,
@@ -19,15 +22,44 @@ import {
   type ScrapedProduct,
 } from "@/lib/scrapegraph/products";
 
+export type SiteFill = ReturnType<typeof mergeExtractedPages>;
+
 export type ProductCrawlResult = {
   reason: CatalogReason;
   products: ScrapedProduct[];
+  fill: SiteFill;
 };
 
-const PRODUCT_SYSTEM =
-  "You extract products a supplier lists on the provided pages (parts, chargers, BMS, controllers, and other catalog items). Reply with one JSON object only: {\"products\":[{\"name\":\"\",\"description\":\"\",\"image_url\":\"\",\"category\":\"\",\"source_url\":\"\",\"details\":{}}]}. Use only names, descriptions, categories, and image URLs that appear in the supplied pages. source_url must be the page URL. Copy image_url from that page's IMAGES list when a product photo is listed. Do not invent products, prices, SKUs, or stock. Skip navigation, contact, and about-us text.";
+export function emptySiteFill(): SiteFill {
+  return {
+    phone: null,
+    email: null,
+    wechat: null,
+    wechat_qr_url: null,
+    address: null,
+    city: null,
+    province: null,
+    export_markets: [],
+    company_type: "unknown" as CompanyType,
+    families: [],
+    certifications: [],
+    factories: [],
+    contacts: [],
+    excerpt: "",
+  };
+}
 
-type SitePage = { url: string; text: string; images: string[] };
+const PRODUCT_SYSTEM =
+  "You extract catalog products listed on these supplier pages (helmets, visors, parts, chargers, BMS, model codes like BY-111). Reply with one JSON object only: {\"products\":[{\"name\":\"\",\"description\":\"\",\"image_url\":\"\",\"category\":\"\",\"source_url\":\"\",\"details\":{}}]}. Use only names, descriptions, categories, and image URLs that appear in the supplied pages. source_url must be the page URL. Copy image_url from that page's IMAGES list when a product photo is listed. Do not invent products, prices, SKUs, or stock. Skip navigation, contact, and about-us text.";
+
+type SitePage = { url: string; html: string; text: string; images: string[] };
+
+function pageScore(page: SitePage): number {
+  const hay = `${page.url} ${page.text.slice(0, 400)}`;
+  if (/h-col-|sys-pd|product|helmet|catalog|产品/i.test(hay)) return 2;
+  if (/contact|wechat|whatsapp|联系/i.test(hay)) return 1;
+  return 0;
+}
 
 function bareHost(value: string): string {
   try {
@@ -128,8 +160,8 @@ async function collectPages(start: string, deadline: number): Promise<SitePage[]
       }
     });
     $("script,style,noscript").remove();
-    const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 20_000);
-    if (text.length >= 40) pages.push({ url: page.url, text, images: [...images].slice(0, 24) });
+    const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 40_000);
+    if (text.length >= 40) pages.push({ url: page.url, html, text, images: [...images].slice(0, 40) });
   }
   return pages;
 }
@@ -140,17 +172,19 @@ export async function scrapeSiteProducts(
   options?: { budgetMs?: number },
 ): Promise<ProductCrawlResult> {
   const plan = planSiteCrawl({ hasKey: Boolean(mammouthConfig()), website });
-  if (plan.action === "skip") return { reason: plan.reason, products: [] };
+  if (plan.action === "skip") return { reason: plan.reason, products: [], fill: emptySiteFill() };
   const siteHost = new URL(plan.website).host;
   const deadline = Date.now() + (options?.budgetMs ?? PRODUCT_CRAWL_MS);
 
   try {
     const pages = await collectPages(plan.website, deadline);
-    if (!pages.length) return { reason: "failed", products: [] };
+    const fill = mergeExtractedPages(pages.map((page) => ({ url: page.url, extracted: extractFromHtml(page.html, page.url) })));
+    if (!pages.length) return { reason: "failed", products: [], fill };
     const listed = uniqueProducts(
       pages.flatMap((page) =>
         productsListedOnPage({
           text: page.text,
+          html: page.html,
           imageUrls: page.images,
           pageUrl: page.url,
           siteHost,
@@ -158,14 +192,15 @@ export async function scrapeSiteProducts(
         }),
       ),
     );
-    const packed = pages
+    const packed = [...pages]
+      .sort((a, b) => pageScore(b) - pageScore(a))
       .map((page) => `URL: ${page.url}\nTEXT: ${page.text}\nIMAGES:\n${page.images.join("\n")}`)
       .join("\n\n")
-      .slice(0, 24_000);
+      .slice(0, 48_000);
     const remaining = deadline - Date.now();
     if (remaining < 1_500) {
       logInfo("product_crawl_failed", { error: "budget" });
-      return { reason: listed.length ? "saved" : "failed", products: listed };
+      return { reason: listed.length ? "saved" : "failed", products: listed, fill };
     }
     const result = await mammouthJson({
       system: PRODUCT_SYSTEM,
@@ -174,7 +209,7 @@ export async function scrapeSiteProducts(
     });
     if (!result.ok) {
       logInfo("product_crawl_failed", { error: result.error });
-      return { reason: listed.length ? "saved" : "failed", products: listed };
+      return { reason: listed.length ? "saved" : "failed", products: listed, fill };
     }
     const record = result.json && typeof result.json === "object" ? (result.json as { products?: unknown[] }) : {};
     const items = Array.isArray(record.products) ? record.products : [];
@@ -203,16 +238,16 @@ export async function scrapeSiteProducts(
     const listedByName = new Map(listed.map((product) => [product.name, product]));
     const grounded = rows.flatMap((product) => {
       const page = pages.find((entry) => entry.url === product.source_url);
-      if (!page || !page.text.includes(product.name)) return [];
-      const verbatim = product.description && page.text.includes(product.description) ? productDescription(product.description) : null;
+      if (!page || !namePrintedOnPage(product.name, page.text)) return [];
+      const verbatim = product.description && namePrintedOnPage(product.description, page.text) ? productDescription(product.description) : null;
       const fallback = listedByName.get(product.name);
       return [{ ...product, description: verbatim ?? fallback?.description ?? null }];
     });
     const products: ScrapedProduct[] = uniqueProducts([...listed, ...grounded]);
-    return { reason: products.length ? "saved" : "empty", products };
+    return { reason: products.length ? "saved" : "empty", products, fill };
   } catch (error) {
     const message = error instanceof Error ? error.message : "request_failed";
     logInfo("product_crawl_failed", { error: message.slice(0, 180) });
-    return { reason: "failed", products: [] };
+    return { reason: "failed", products: [], fill: emptySiteFill() };
   }
 }

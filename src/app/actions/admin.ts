@@ -8,11 +8,11 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { extractCard, fillEmptyFields, normalizeWebsite, type CardExtraction } from "@/lib/domain";
 import { isDirectoryWritable, isReadOnlyFsError } from "@/lib/demo/filesystem";
-import { crawlWebsite } from "@/lib/enrichment/crawl";
+import { fetchRemoteImage } from "@/lib/enrichment/extract";
 import { isDemoMode } from "@/lib/env";
 import { logInfo } from "@/lib/log";
 import { recognizeImage } from "@/lib/ocr";
-import { scrapeSiteProducts, type ProductCrawlResult } from "@/lib/scrapegraph/catalog";
+import { emptySiteFill, scrapeSiteProducts, type ProductCrawlResult } from "@/lib/scrapegraph/catalog";
 import { extractCardWithScrapeGraph, type ScrapeGraphCardResult } from "@/lib/scrapegraph/extract";
 import { UPLOAD_PRODUCT_CRAWL_MS, type CatalogReason } from "@/lib/scrapegraph/products";
 import type { CompanyDraft } from "@/lib/records";
@@ -263,38 +263,29 @@ export async function runScrape(formData: FormData) {
     const age = Date.now() - new Date(company.last_scraped_at).getTime();
     if (age < 7 * 24 * 60 * 60 * 1000) redirect(`/admin/companies/${companyId}?error=recent`);
   }
-  const result = await crawlWebsite(company.website);
-  logInfo("scrape_finished", { companyId, status: result.status, pages: result.pages.length });
-  if (!result.patch) {
+  const categories = await directory.listCategories();
+  const catalog = await scrapeSiteProducts(company.website, categories);
+  logInfo("scrape_finished", { companyId, status: catalog.reason, products: catalog.products.length });
+  if (catalog.reason === "failed" && !catalog.products.length && !catalog.fill.excerpt) {
     await directory.saveScrapeJob({
       company_id: companyId,
-      status: result.status === "skipped" ? "skipped" : "failed",
+      status: "failed",
       proposed_patch: null,
-      error: result.error,
+      error: "fetch_failed",
     });
     await directory.addSource({
       company_id: companyId,
       source_type: "website",
       url_or_ref: company.website,
       raw_text: null,
-      payload: { status: result.status, error: result.error },
+      payload: { status: catalog.reason, error: "fetch_failed" },
     });
-    redirect(`/admin/companies/${companyId}?scrape=${result.status}`);
+    redirect(`/admin/companies/${companyId}?scrape=failed`);
   }
-  const filled = fillEmptyFields(company, {
-    phone: result.patch.phone,
-    email: result.patch.email,
-    wechat: result.patch.wechat,
-    address: result.patch.address,
-    city: result.patch.city,
-    province: result.patch.province,
-    export_markets: result.patch.export_markets,
-    company_type: result.patch.company_type,
-  });
-  const categories = await directory.listCategories();
+  const filled = fillEmptyFields(company, catalog.fill);
   const category_slugs = categories
     .filter((category) =>
-      result.patch!.families.some((family) => family.name.toLowerCase().includes(category.name_en.toLowerCase().split(" ")[0].toLowerCase())),
+      catalog.fill.families.some((family) => family.name.toLowerCase().includes(category.name_en.toLowerCase().split(" ")[0].toLowerCase())),
     )
     .map((category) => category.slug);
   await directory.saveScrapeJob({
@@ -302,10 +293,10 @@ export async function runScrape(formData: FormData) {
     status: "proposed",
     proposed_patch: {
       ...filled,
-      families: result.patch.families,
-      certifications: result.patch.certifications,
-      factories: result.patch.factories,
-      contacts: result.patch.contacts,
+      families: catalog.fill.families,
+      certifications: catalog.fill.certifications,
+      factories: catalog.fill.factories,
+      contacts: catalog.fill.contacts,
       category_slugs,
     },
     error: null,
@@ -313,10 +304,36 @@ export async function runScrape(formData: FormData) {
   await directory.addSource({
     company_id: companyId,
     source_type: "website",
-    url_or_ref: result.pages[0]?.url ?? company.website,
-    raw_text: result.patch.excerpt,
-    payload: { pages: result.pages.map((page) => page.url) },
+    url_or_ref: company.website,
+    raw_text: catalog.fill.excerpt,
+    payload: { catalog: catalog.reason, products: catalog.products.length },
   });
+  if (catalog.products.length) {
+    await directory.addProducts(companyId, catalog.products, scrapeStatus(catalog.reason));
+  }
+  if (!company.wechat_qr_url && catalog.fill.wechat_qr_url) {
+    const qr = await storeRemoteWechatQr(companyId, catalog.fill.wechat_qr_url);
+    if (qr) {
+      await directory.updateCompany(companyId, {
+        name_zh: company.name_zh,
+        name_en: company.name_en,
+        brand: company.brand,
+        company_type: company.company_type,
+        address: company.address,
+        city: company.city,
+        province: company.province,
+        country: company.country,
+        website: company.website,
+        wechat: company.wechat,
+        phone: company.phone,
+        email: company.email,
+        export_markets: company.export_markets,
+        notes: company.notes,
+        category_ids: company.category_ids,
+        wechat_qr_url: qr,
+      });
+    }
+  }
   revalidatePath(`/admin/companies/${companyId}`);
   redirect(`/admin/companies/${companyId}?scrape=proposed`);
 }
@@ -365,6 +382,19 @@ async function readWechatQr(companyId: string, formData: FormData): Promise<stri
     return `/wechat-qr/${companyId}.${ext}`;
   }
   return supabaseStore.uploadWechatQr(`wechat-qr/${companyId}.${ext}`, bytes, mime);
+}
+
+async function storeRemoteWechatQr(companyId: string, url: string): Promise<string | null> {
+  const image = await fetchRemoteImage(url);
+  if (!image) return null;
+  const ext = image.mime.includes("png") ? "png" : image.mime.includes("webp") ? "webp" : "jpg";
+  if (isDemoMode()) {
+    const dir = path.join(process.cwd(), "public", "wechat-qr");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, `${companyId}.${ext}`), image.bytes);
+    return `/wechat-qr/${companyId}.${ext}`;
+  }
+  return supabaseStore.uploadWechatQr(`wechat-qr/${companyId}.${ext}`, image.bytes, image.mime);
 }
 
 async function storeCardImage(id: string, ext: string, bytes: Buffer, mime: string): Promise<string | null> {
@@ -497,12 +527,25 @@ async function ingestCards(formData: FormData) {
       logInfo("draft_save_failed", { error: errorText(error) });
       continue;
     }
-    let crawl: ProductCrawlResult = { reason: "no_website", products: [] };
+    let crawl: ProductCrawlResult = { reason: "no_website", products: [], fill: emptySiteFill() };
     try {
       crawl = await scrapeSiteProducts(website, categories, { budgetMs: UPLOAD_PRODUCT_CRAWL_MS });
     } catch (error) {
       logInfo("product_crawl_failed", { error: errorText(error) });
-      crawl = { reason: "failed", products: [] };
+      crawl = { reason: "failed", products: [], fill: emptySiteFill() };
+    }
+    const filled = fillEmptyFields(extraction, crawl.fill);
+    const qr = crawl.fill.wechat_qr_url ? await storeRemoteWechatQr(companyId, crawl.fill.wechat_qr_url) : null;
+    if (Object.keys(filled).length || qr) {
+      await directory.updateCompany(companyId, {
+        ...extraction,
+        ...filled,
+        notes: "",
+        wechat_qr_url: qr ?? undefined,
+      });
+    }
+    if (!extraction.contact && crawl.fill.contacts[0]) {
+      await directory.addContact(companyId, { ...crawl.fill.contacts[0], is_public: false });
     }
     let savedCount = 0;
     let catalogReason = crawl.reason;

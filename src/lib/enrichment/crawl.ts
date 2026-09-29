@@ -15,7 +15,7 @@ export type CrawlResult = {
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
-function merged(pages: CrawlResult["pages"]) {
+export function mergeExtractedPages(pages: CrawlResult["pages"]) {
   const first = pages[0]?.extracted;
   const families = pages.flatMap((page) => page.extracted.families);
   const uniqueFamilies = families.filter(
@@ -26,6 +26,7 @@ function merged(pages: CrawlResult["pages"]) {
     phone: pages.map((page) => page.extracted.phone).find(Boolean) ?? null,
     email: pages.map((page) => page.extracted.email).find(Boolean) ?? null,
     wechat: pages.map((page) => page.extracted.wechat).find(Boolean) ?? null,
+    wechat_qr_url: pages.map((page) => page.extracted.wechat_qr_url).find(Boolean) ?? null,
     address: pages.map((page) => page.extracted.address).find(Boolean) ?? null,
     city: pages.map((page) => page.extracted.city).find(Boolean) ?? null,
     province: pages.map((page) => page.extracted.province).find(Boolean) ?? null,
@@ -74,11 +75,11 @@ async function readLimited(response: Response): Promise<string> {
   return new TextDecoder().decode(Buffer.concat(chunks)).slice(0, MAX_BYTES);
 }
 
-export async function crawlWebsite(website: string, fetchImpl: FetchLike = fetch): Promise<CrawlResult & { patch: ReturnType<typeof merged> | null }> {
+export async function crawlWebsite(website: string, fetchImpl: FetchLike = fetch): Promise<CrawlResult & { patch: ReturnType<typeof mergeExtractedPages> | null }> {
   if (website === "fixture://sample-supplier") {
     const extracted = extractFromHtml(SAMPLE_SUPPLIER_HTML, "https://fixture.local/sample-supplier");
     const pages = [{ url: website, extracted }];
-    return { status: "succeeded", error: null, pages, patch: merged(pages) };
+    return { status: "succeeded", error: null, pages, patch: mergeExtractedPages(pages) };
   }
 
   let start: URL;
@@ -114,7 +115,7 @@ export async function crawlWebsite(website: string, fetchImpl: FetchLike = fetch
       return { status: "failed", error: "fetch_failed", pages: [], patch: null };
     }
     if (!pages.length) return { status: "failed", error: "no_html", pages: [], patch: null };
-    return { status: "succeeded", error: null, pages, patch: merged(pages) };
+    return { status: "succeeded", error: null, pages, patch: mergeExtractedPages(pages) };
   }
 
   const queue = [start.toString()];
@@ -160,5 +161,5 @@ export async function crawlWebsite(website: string, fetchImpl: FetchLike = fetch
   }
 
   if (!pages.length) return { status: "failed", error: "no_html", pages: [], patch: null };
-  return { status: "succeeded", error: null, pages, patch: merged(pages) };
+  return { status: "succeeded", error: null, pages, patch: mergeExtractedPages(pages) };
 }

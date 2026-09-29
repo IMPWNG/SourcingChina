@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { missingSupabaseKeys, parseCardArgs, supabaseKeyMessage, type CardRecord } from "@/lib/cards/batch";
+import { fillEmptyFields } from "@/lib/domain";
+import { fetchRemoteImage } from "@/lib/enrichment/extract";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { CATEGORIES } from "@/lib/seed";
 import { translateCard } from "@/lib/translate";
@@ -22,6 +24,16 @@ function pythonBin(): string {
 
 function cardSites(card: CardRecord): string[] {
   return (card.company.websites?.length ? card.company.websites : [card.company.website]).filter((site): site is string => Boolean(site));
+}
+
+async function saveSiteQr(source: string, url: string): Promise<string | null> {
+  const image = await fetchRemoteImage(url);
+  if (!image) return null;
+  const dir = path.join(process.cwd(), "data", "card-qr");
+  await mkdir(dir, { recursive: true });
+  const dest = path.join(dir, `${path.parse(source).name}-site.jpg`);
+  await writeFile(dest, image.bytes);
+  return dest;
 }
 
 async function saveCardThenCrawl(cards: CardRecord[]): Promise<{ dbOk: boolean }> {
@@ -68,6 +80,11 @@ async function saveCardThenCrawl(cards: CardRecord[]): Promise<{ dbOk: boolean }
         category: item.category_id ? slugById.get(item.category_id) ?? null : null,
         details: item.details,
       }));
+      const filled = fillEmptyFields(card.company, crawl.fill);
+      Object.assign(card.company, filled);
+      if (!card.wechat_qr_path && crawl.fill.wechat_qr_url) {
+        card.wechat_qr_path = await saveSiteQr(card.source, crawl.fill.wechat_qr_url);
+      }
     } catch (error) {
       card.catalog = "failed";
       card.products = [];

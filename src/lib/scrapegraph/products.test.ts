@@ -88,3 +88,18 @@ test("product names printed on a supplier page are kept with a photo", () => {
   });
   assert.equal(about.find((item) => item.name === "智能BMS")?.description, null);
 });
+
+test("helmet model codes on a catalog page are kept", () => {
+  const products = productsListedOnPage({
+    text: "HOME PRODUCT CONTACT US Motorcycle Helmet ECE DOT",
+    html: '<span>BY-111</span><span>BY-166</span><a href="/sys-pr/?g=200">BY-111</a>',
+    imageUrls: [],
+    pageUrl: "https://www.rng-helmets.com/h-col-125.html",
+    siteHost: "www.rng-helmets.com",
+    categories,
+  });
+  assert.equal(products.some((item) => item.name === "BY-111"), true);
+  assert.equal(products.some((item) => item.name === "BY-166"), true);
+  assert.equal(products.some((item) => item.name === "Helmet"), false);
+  assert.equal(products.find((item) => item.name === "BY-111")?.category_id, "helmets-id");
+});

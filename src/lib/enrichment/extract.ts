@@ -6,6 +6,7 @@ export type ExtractedPage = {
   phone: string | null;
   email: string | null;
   wechat: string | null;
+  wechat_qr_url: string | null;
   address: string | null;
   city: string | null;
   province: string | null;
@@ -31,10 +32,35 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
   $("script, style, noscript").remove();
   const text = clean($("body").text() || $.root().text());
   const emails = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
-  const phones = (text.match(/(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}/g) ?? []).filter(
+  const phones: string[] = (text.match(/(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}/g) ?? []).filter(
     (item) => item.replace(/\D/g, "").length >= 8,
   );
-  const wechat = text.match(/(?:wechat|weixin|微信)\s*[:：]?\s*([A-Za-z][A-Za-z0-9_-]{3,})/i)?.[1] ?? null;
+  $("a[href]").each((_, element) => {
+    const href = $(element).attr("href") ?? "";
+    const wa = href.match(/(?:wa\.me\/|whatsapp\.com\/send\?phone=)(\+?\d{8,15})/i);
+    if (!wa?.[1]) return;
+    const number = wa[1].startsWith("+") ? wa[1] : `+${wa[1]}`;
+    if (!phones.some((item) => item.replace(/\D/g, "").endsWith(number.replace(/\D/g, "").slice(-8)))) phones.unshift(number);
+  });
+  const wechatMatch = text.match(/(?:wechat|weixin|微信)\s*[:：]?\s*(\+?\d[\d\s-]{8,18}|[A-Za-z][A-Za-z0-9_-]{3,})/i);
+  const wechatRaw = wechatMatch?.[1]?.trim() ?? null;
+  const wechatDigits = wechatRaw ? wechatRaw.replace(/\D/g, "") : "";
+  const wechat = wechatRaw && wechatDigits.length >= 8 ? wechatRaw : wechatRaw && /[A-Za-z]/.test(wechatRaw) ? wechatRaw : null;
+  if (wechatDigits.length >= 8 && !phones.some((item) => item.replace(/\D/g, "").includes(wechatDigits))) {
+    phones.unshift(wechatRaw!);
+  }
+  let wechat_qr_url: string | null = null;
+  $("img").each((_, element) => {
+    if (wechat_qr_url) return;
+    const src = $(element).attr("src") || $(element).attr("data-src") || $(element).attr("data-original") || "";
+    const blob = `${$(element).attr("alt") ?? ""} ${$(element).attr("title") ?? ""} ${$(element).attr("class") ?? ""} ${src}`;
+    if (!/qrcode|wechat|weixin|微信/.test(blob)) return;
+    try {
+      wechat_qr_url = new URL(src, pageUrl).toString();
+    } catch {
+      /* ignore bad src */
+    }
+  });
   const address =
     text.match(/(?:address|地址)\s*[:：]\s*([^.]{8,160})/i)?.[1]?.trim() ?? null;
   const markets = (text.match(/\b(EU|US|USA|UK|ASEAN|AFRICA|ASIA)\b/gi) ?? []).map((item) =>
@@ -72,8 +98,8 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
   if (/chongqing|重庆/i.test(text)) {
     city = "Chongqing";
     province = "Chongqing";
-  } else if (/wenzhou|温州|zhejiang|浙江/i.test(text)) {
-    city = /wenzhou|温州/i.test(text) ? "Wenzhou" : null;
+  } else if (/yueqing|乐清|wenzhou|温州|zhejiang|浙江/i.test(text)) {
+    city = /yueqing|乐清/i.test(text) ? "Yueqing" : /wenzhou|温州/i.test(text) ? "Wenzhou" : null;
     province = "Zhejiang";
   }
 
@@ -96,11 +122,15 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
   const labeledEmail = contactBlock.match(/邮箱\s*[:：]\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1] ?? null;
   const contacts: ExtractedPage["contacts"] =
     labeledPhone || labeledEmail ? [{ name: "Office", title: null, phone: labeledPhone, email: labeledEmail }] : [];
+  if (!contacts.length && (phones[0] || emails[0] || wechat)) {
+    contacts.push({ name: "Sales", title: null, phone: phones[0]?.trim() ?? null, email: emails[0] ?? null });
+  }
 
   return {
     phone: phones[0]?.trim() ?? null,
     email: emails[0] ?? null,
     wechat,
+    wechat_qr_url,
     address,
     city,
     province,
@@ -131,6 +161,25 @@ export function sameHost(a: string, b: string): boolean {
     return new URL(a).host === new URL(b).host;
   } catch {
     return false;
+  }
+}
+
+export async function fetchRemoteImage(url: string, timeoutMs = 8000): Promise<{ bytes: Buffer; mime: string } | null> {
+  const abs = url.startsWith("//") ? `https:${url}` : url;
+  try {
+    const response = await fetch(abs, {
+      headers: { Accept: "image/*" },
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "follow",
+    });
+    if (!response.ok) return null;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 80 || bytes.length > 2_000_000) return null;
+    const mime = response.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
+    if (!mime.startsWith("image/")) return null;
+    return { bytes, mime };
+  } catch {
+    return null;
   }
 }
 

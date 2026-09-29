@@ -24,6 +24,22 @@ test("fixture page yields families and certs without prices or SKUs", () => {
   assert.equal(extracted.families.some((family) => /sku|price|\$|€/i.test(family.name)), false);
 });
 
+test("wechat digits, whatsapp links, and QR images are kept", () => {
+  const page = extractFromHtml(
+    `<html><body>
+      <p>Wechat：+86 18324278211 乐清市</p>
+      <a href="https://wa.me/8618324278211">WhatsApp</a>
+      <img alt="service qrcode" src="//cdn.example/wechat-qr.png">
+    </body></html>`,
+    "https://www.rng-helmets.com/h-col-118.html",
+  );
+  assert.equal(page.wechat, "+86 18324278211");
+  assert.equal(page.phone?.replace(/\D/g, "").slice(-11), "18324278211");
+  assert.equal(page.wechat_qr_url, "https://cdn.example/wechat-qr.png");
+  assert.equal(page.city, "Yueqing");
+  assert.equal(page.province, "Zhejiang");
+});
+
 test("crawl respects robots.txt and the local fixture", async () => {
   const fixture = await crawlWebsite("fixture://sample-supplier");
   assert.equal(fixture.status, "succeeded");
