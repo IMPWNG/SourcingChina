@@ -437,6 +437,19 @@ export const demoStore = {
       return company;
     });
   },
+  publishAllDrafts() {
+    return update((db) => {
+      const now = new Date().toISOString();
+      let count = 0;
+      for (const company of db.companies) {
+        if (company.merged_into_id || company.is_published) continue;
+        company.is_published = true;
+        company.updated_at = now;
+        count += 1;
+      }
+      return count;
+    });
+  },
   addCategory(input: { slug: string; name_en: string; name_zh: string | null }) {
     return update((db) => {
       if (db.categories.some((item) => item.slug === input.slug)) throw new Error("That slug already exists.");

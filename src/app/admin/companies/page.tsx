@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DeleteCompany } from "@/components/delete-company";
+import { PublishAllDrafts } from "@/components/publish-all-drafts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { directory } from "@/lib/store";
@@ -14,14 +15,17 @@ export default async function CompaniesPage({
 }) {
   const params = await searchParams;
   const status = params.status === "draft" || params.status === "published" ? params.status : "all";
-  const companies = await directory.adminList(status);
+  const [companies, counts] = await Promise.all([directory.adminList(status), directory.counts()]);
   return (
     <main className="mx-auto max-w-6xl space-y-4 px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Companies</h1>
-        <Button asChild>
-          <Link href="/admin/companies/new">New company</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <PublishAllDrafts count={counts.drafts} />
+          <Button asChild>
+            <Link href="/admin/companies/new">New company</Link>
+          </Button>
+        </div>
       </div>
       <div className="flex gap-2 text-sm">
         {(["all", "draft", "published"] as const).map((item) => (

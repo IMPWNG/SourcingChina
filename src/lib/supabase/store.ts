@@ -327,6 +327,17 @@ export const supabaseStore = {
     fail(error);
     return data;
   },
+  async publishAllDrafts() {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("companies")
+      .update({ is_published: true })
+      .eq("is_published", false)
+      .is("merged_into_id", null)
+      .select("id");
+    fail(error);
+    return data?.length ?? 0;
+  },
   async addCategory(input: { slug: string; name_en: string; name_zh: string | null }) {
     const supabase = await createClient();
     const { data, error } = await supabase.from("product_categories").insert(input).select("*").single();

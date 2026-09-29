@@ -100,6 +100,15 @@ export async function setPublished(formData: FormData) {
   redirect(`/admin/companies/${id}`);
 }
 
+export async function publishAllDrafts() {
+  await requireAdmin();
+  await directory.publishAllDrafts();
+  revalidatePath("/directory");
+  revalidatePath("/admin");
+  revalidatePath("/admin/companies");
+  redirect("/admin/companies?status=published");
+}
+
 export async function addCategory(formData: FormData) {
   await requireAdmin();
   const parsed = categorySchema.safeParse({

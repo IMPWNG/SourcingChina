@@ -22,6 +22,7 @@ export const directory = {
   updateCompany: (id: string, draft: CompanyDraft) => store().updateCompany(id, draft),
   deleteCompany: (id: string) => store().deleteCompany(id),
   setPublished: (id: string, published: boolean) => store().setPublished(id, published),
+  publishAllDrafts: () => store().publishAllDrafts(),
   addCategory: (input: { slug: string; name_en: string; name_zh: string | null }) => store().addCategory(input),
   addFamily: (companyId: string, input: { name: string; description: string | null; category_id: string | null }) =>
     store().addFamily(companyId, input),
