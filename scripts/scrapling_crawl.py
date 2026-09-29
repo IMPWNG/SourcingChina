@@ -3,13 +3,13 @@
 import json
 import re
 import sys
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from scrapling.fetchers import FetcherSession
 from scrapling.parser import Selector
 
 PREFER = re.compile(
-    r"h-col-|sys-p[rd]|/products?|/product|/goods|/item|/detail|/shop|/store|/collection|/categor|/catalog|/pd[/-]|contact|about|factory|certif|helmet|whatsapp|wechat|联系|产品|商品|系列|关于|工厂|资质",
+    r"h-col-|sys-p[rd]|m5page=|jpt=|/products?|/product|/goods|/item|/detail|/shop|/store|/collection|/categor|/catalog|/pd[/-]|contact|about|factory|certif|helmet|whatsapp|wechat|联系|产品|商品|系列|关于|工厂|资质",
     re.I,
 )
 SKIP = re.compile(
@@ -18,6 +18,7 @@ SKIP = re.compile(
 )
 JS_KEY = re.compile(r'document\.cookie="(jsKey=[^;"]+)')
 LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
+TOTAL_PAGES = re.compile(r"total\s+(\d+)\s+pages|共\s*(\d+)\s*页", re.I)
 MAX_HTML = 500_000
 
 
@@ -100,7 +101,42 @@ def links_from(html: str, final_url: str, origin: str, depth: int, prefer_exact:
             product.append(item)
         else:
             other.append(item)
-    return product[:24], other[:10]
+    return product[:80], other[:8]
+
+
+def catalog_urls(html: str, current: str) -> list[str]:
+    parsed = urlparse(current)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(url: str) -> None:
+        clean = urlparse(url)._replace(fragment="").geturl()
+        if clean in seen or SKIP.search(clean):
+            return
+        seen.add(clean)
+        found.append(clean)
+
+    for gid in re.findall(r"sys-pr/\?g=(\d+)", html, re.I):
+        add(f"{root}/sys-pr/?g={gid}")
+    for gid in re.findall(r'<input[^>]*\bvalue=["\'](\d+)["\'][^>]*>', html, re.I):
+        add(f"{root}/sys-pr/?g={gid}")
+    for col in re.findall(r"h-col-(\d+)\.html", html, re.I):
+        add(f"{root}/h-col-{col}.html")
+    g = (parse_qs(parsed.query).get("g") or [None])[0]
+    total = TOTAL_PAGES.search(html)
+    if g and total:
+        n = int(total.group(1) or total.group(2) or "1")
+        for page in range(2, min(n, 30) + 1):
+            add(f"{root}/sys-pr/?g={g}&m5page={page}")
+    for href in re.findall(r"""href=["']([^"']*m5page=\d+[^"']*)["']""", html, re.I):
+        joined = urljoin(current, href.replace("&amp;", "&"))
+        page = re.search(r"m5page=(\d+)", joined)
+        if g and page and "sys-pr" not in joined:
+            add(f"{root}/sys-pr/?g={g}&m5page={page.group(1)}")
+        else:
+            add(joined)
+    return found
 
 
 def sitemap_urls(session, start: str, origin: str, timeout: float) -> list[str]:
@@ -123,13 +159,13 @@ def sitemap_urls(session, start: str, origin: str, timeout: float) -> list[str]:
             break
     product = [url for url in found if PREFER.search(url)]
     other = [url for url in found if url not in product]
-    return (product + other)[:40]
+    return (product + other)[:80]
 
 
 def crawl(spec: dict) -> dict:
     start = spec["start"]
-    max_pages = int(spec.get("max_pages") or 24)
-    max_depth = int(spec.get("max_depth") or 3)
+    max_pages = int(spec.get("max_pages") or 80)
+    max_depth = int(spec.get("max_depth") or 4)
     timeout = float(spec.get("timeout") or 8)
     origin = host_of(start)
     prefer_exact = {url for url in (spec.get("seeds") or []) if isinstance(url, str) and host_of(url) == origin}
@@ -160,6 +196,10 @@ def crawl(spec: dict) -> dict:
             if 'document.cookie="jsKey=' in html:
                 continue
             pages.append({"url": final, "status": status, "html": html})
+            for url in catalog_urls(html, final):
+                if url not in seen and url not in queued:
+                    queue.insert(0, {"url": url, "depth": 1})
+                    queued.add(url)
             if item["depth"] >= max_depth:
                 continue
             product, other = links_from(html, final, origin, item["depth"] + 1, prefer_exact)
@@ -174,8 +214,27 @@ def crawl(spec: dict) -> dict:
     return {"pages": pages, "error": None}
 
 
+def _self_check() -> None:
+    html = (
+        '<a href="/sys-pr/?g=12">Half Face</a>'
+        '<input type="radio" value="14">'
+        '<a href="/h-col-125.html">Products</a>'
+        "total 2 pages"
+        '<a href="/?m5page=2">2</a>'
+    )
+    urls = catalog_urls(html, "https://www.rng-helmets.com/sys-pr/?g=12")
+    assert "https://www.rng-helmets.com/sys-pr/?g=12" in urls
+    assert "https://www.rng-helmets.com/sys-pr/?g=14" in urls
+    assert "https://www.rng-helmets.com/h-col-125.html" in urls
+    assert "https://www.rng-helmets.com/sys-pr/?g=12&m5page=2" in urls
+
+
 def main() -> None:
     spec = json.loads(sys.stdin.read() or "{}")
+    if spec.get("self_check"):
+        _self_check()
+        json.dump({"ok": True}, sys.stdout)
+        return
     try:
         json.dump(crawl(spec), sys.stdout, ensure_ascii=False)
     except Exception as error:

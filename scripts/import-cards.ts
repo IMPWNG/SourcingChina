@@ -136,7 +136,7 @@ async function upsertContact(supabase: SupabaseClient, companyId: string, compan
   if (inserted.error) throw new Error(inserted.error.message);
 }
 
-export async function upsertProducts(supabase: SupabaseClient, companyId: string, card: CardRecord): Promise<number> {
+export async function upsertProducts(supabase: SupabaseClient, companyId: string, card: CardRecord, options?: { replace?: boolean }): Promise<number> {
   return withSupabaseRetry("upsert products", async () => {
   if (!card.products.length) return 0;
   const slugs = [...new Set(card.products.map((item) => item.category).filter((item): item is string => Boolean(item)))];
@@ -150,6 +150,7 @@ export async function upsertProducts(supabase: SupabaseClient, companyId: string
   const byName = new Map(((existing.data ?? []) as { id: string; name: string }[]).map((item) => [item.name.toLowerCase(), item.id]));
   let count = 0;
   const linked = new Set<string>();
+  const kept = new Set<string>();
   for (const product of card.products) {
     const category_id = product.category ? categoryId.get(product.category) ?? null : null;
     if (category_id) linked.add(category_id);
@@ -162,16 +163,25 @@ export async function upsertProducts(supabase: SupabaseClient, companyId: string
       source_url: product.source_url,
       details: product.details,
     };
-    const id = byName.get(product.name.toLowerCase());
+    const key = product.name.toLowerCase();
+    kept.add(key);
+    const id = byName.get(key);
     if (id) {
       const updated = await supabase.from("products").update(row).eq("id", id);
       if (updated.error) throw new Error(updated.error.message);
     } else {
       const inserted = await supabase.from("products").insert(row).select("id").single();
       if (inserted.error) throw new Error(inserted.error.message);
-      byName.set(product.name.toLowerCase(), (inserted.data as { id: string }).id);
+      byName.set(key, (inserted.data as { id: string }).id);
     }
     count += 1;
+  }
+  if (options?.replace) {
+    const stale = ((existing.data ?? []) as { id: string; name: string }[]).filter((item) => !kept.has(item.name.toLowerCase())).map((item) => item.id);
+    if (stale.length) {
+      const removed = await supabase.from("products").delete().in("id", stale);
+      if (removed.error) throw new Error(removed.error.message);
+    }
   }
   if (linked.size) {
     const links = [...linked].map((category_id) => ({ company_id: companyId, category_id }));

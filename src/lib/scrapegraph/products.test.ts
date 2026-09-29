@@ -91,8 +91,8 @@ test("product names printed on a supplier page are kept with a photo", () => {
 
 test("helmet model codes on a catalog page are kept", () => {
   const products = productsListedOnPage({
-    text: "HOME PRODUCT CONTACT US Motorcycle Helmet ECE DOT",
-    html: '<span>BY-111</span><span>BY-166</span><a href="/sys-pr/?g=200">BY-111</a>',
+    text: "HOME PRODUCT CONTACT US Motorcycle Helmet ECE DOT BY-R7S BY-705-DOT",
+    html: '<span>BY-111</span><span>BY-166</span><a href="/sys-pr/?g=200">BY-111</a><a href="/sys-pr/?g=12">BY-206 Type 1/2 Helmet Certificate CCC Reservation Now</a>',
     imageUrls: [],
     pageUrl: "https://www.rng-helmets.com/h-col-125.html",
     siteHost: "www.rng-helmets.com",
@@ -100,8 +100,28 @@ test("helmet model codes on a catalog page are kept", () => {
   });
   assert.equal(products.some((item) => item.name === "BY-111"), true);
   assert.equal(products.some((item) => item.name === "BY-166"), true);
+  assert.equal(products.some((item) => item.name === "BY-R7S"), true);
+  assert.equal(products.some((item) => item.name === "BY-705-DOT"), true);
+  assert.equal(products.some((item) => item.name === "BY-206 Type 1/2 Helmet"), true);
   assert.equal(products.some((item) => item.name === "Helmet"), false);
   assert.equal(products.find((item) => item.name === "BY-111")?.category_id, "helmets-id");
+});
+
+test("ai cooperate blurbs are not saved as products", () => {
+  const products = productsFromPage({
+    json: {
+      products: [
+        { name: "BY-111", description: "Full face helmet." },
+        { name: "information与我们共同经营BYB/RNG品牌头盔Co-operate", description: "Partner text." },
+      ],
+    },
+    pageUrl: "https://www.rng-helmets.com/sys-pr/?g=6",
+    imageUrls: [],
+    siteHost: "www.rng-helmets.com",
+    categories,
+  });
+  assert.equal(products.some((item) => item.name === "BY-111"), true);
+  assert.equal(products.some((item) => /co-?operate/i.test(item.name)), false);
 });
 
 test("json-ld product names are kept and off-site crawl picks are dropped", () => {

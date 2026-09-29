@@ -7,6 +7,7 @@ import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { CATEGORIES } from "@/lib/seed";
 import { cardsSupabase, upsertProducts, upsertWechatQr } from "./import-cards";
 import { loadEnvLocal } from "./load-env";
+import { withSupabaseRetry } from "./supabase-retry";
 
 type CompanyRow = CompanyIdentity & { id: string };
 
@@ -37,18 +38,25 @@ async function main(): Promise<void> {
     .not("website", "is", null)
     .order("created_at", { ascending: true });
   if (listed.error) throw new Error(listed.error.message);
-  const rows = (listed.data ?? []) as CompanyRow[];
+  const filter = process.argv.slice(2).filter((arg) => arg !== "--").join(" ").trim().toLowerCase();
+  const rows = ((listed.data ?? []) as CompanyRow[]).filter((row) => {
+    if (!filter) return true;
+    return `${row.website} ${row.brand} ${row.name_en} ${row.name_zh} ${row.id}`.toLowerCase().includes(filter);
+  });
   console.log(`Crawling ${rows.length} compan${rows.length === 1 ? "y" : "ies"} with a website`);
   for (const row of rows) {
     const label = row.name_zh || row.name_en || row.website || row.id;
     console.log(`${label}: ${row.website}`);
     try {
-      const crawl = await scrapeSiteProducts(row.website, categories);
+      const crawl = await scrapeSiteProducts(row.website, categories, { budgetMs: 480_000 });
+      console.log(`${label}: crawl ${crawl.reason}, ${crawl.products.length} product${crawl.products.length === 1 ? "" : "s"}`);
       const filled = fillEmptyFields(row, crawl.fill);
       const status = crawl.reason === "failed" ? "failed" : crawl.reason === "saved" || crawl.reason === "empty" ? "succeeded" : "skipped";
       const patch = { ...filled, last_scrape_status: status, last_scraped_at: new Date().toISOString() };
-      const updated = await supabase.from("companies").update(patch).eq("id", row.id);
-      if (updated.error) throw new Error(updated.error.message);
+      await withSupabaseRetry("update company", async () => {
+        const updated = await supabase.from("companies").update(patch).eq("id", row.id);
+        if (updated.error) throw new Error(updated.error.message);
+      });
       if (crawl.fill.wechat_qr_url) {
         const qr = await saveSiteQr(row.id, crawl.fill.wechat_qr_url);
         if (qr) await upsertWechatQr(supabase, row.id, qr);
@@ -85,10 +93,12 @@ async function main(): Promise<void> {
         })),
         catalog: crawl.reason,
       };
-      const saved = await upsertProducts(supabase, row.id, card);
+      const saved = await upsertProducts(supabase, row.id, card, { replace: true });
       console.log(`${label}: ${crawl.reason}, ${saved} product${saved === 1 ? "" : "s"}`);
     } catch (error) {
-      console.error(`${label}: ${error instanceof Error ? error.message : "crawl failed"}`);
+      const message = error instanceof Error ? error.message : "crawl failed";
+      const cause = error instanceof Error && error.cause instanceof Error ? ` (${error.cause.message})` : "";
+      console.error(`${label}: ${message}${cause}`);
     }
   }
 }

@@ -1,12 +1,13 @@
 import { normalizeWebsite } from "@/lib/domain";
+import * as cheerio from "cheerio";
 
-export const PRODUCT_PAGE_LIMIT = 24;
-export const PRODUCT_DEPTH = 3;
+export const PRODUCT_PAGE_LIMIT = 120;
+export const PRODUCT_DEPTH = 4;
 export const PRODUCT_LINKS_PER_PAGE = 6;
-export const PRODUCT_CRAWL_MS = 120_000;
+export const PRODUCT_CRAWL_MS = 300_000;
 /** Admin upload still returns a draft; keep this under a Vercel function. */
 export const UPLOAD_PRODUCT_CRAWL_MS = 45_000;
-export const PRODUCT_SAVE_LIMIT = 120;
+export const PRODUCT_SAVE_LIMIT = 400;
 
 export type CatalogReason = "no_key" | "no_website" | "failed" | "empty" | "saved";
 
@@ -21,8 +22,8 @@ export type ScrapedProduct = {
 
 const NAV_NAME = /^(home|about|contact|products|product|news|menu|login|search|首页|关于|联系|产品)$/i;
 const BLOCKED_DETAIL = /^(price|prices|sku|skus|stock|stocks|inventory|msrp|cost|costs)$/i;
-const MODEL_CODE = /^[A-Z]{2,4}-\d{2,5}[A-Z]{0,2}$/i;
-const SKIP_MODEL = /^(ISO|CCC|DOT|ECE|GB|CE|IEC|UN|EN|DIN|ASTM)-/i;
+const MODEL_CODE = /^[A-Z]{2,6}(?:-[A-Z0-9()]{1,16}){1,4}$/i;
+const SKIP_MODEL = /^(ISO|CCC|DOT|ECE|GB|CE|IEC|UN|EN|DIN|ASTM|COL)-/i;
 
 export function planSiteCrawl(input: { hasKey: boolean; website: string | null }):
   | { action: "crawl"; website: string }
@@ -87,6 +88,20 @@ export function namePrintedOnPage(name: string, text: string): boolean {
   return text.replace(/\s+/g, "").toLowerCase().includes(needle);
 }
 
+function catalogTitle(raw: string): string {
+  return raw
+    .replace(/\s+/g, " ")
+    .replace(/\s*(Reservation Now|立即预订|Buy Now|立即购买).*$/i, "")
+    .replace(/\s*Certificate(?:\s+CCC(?:\/DOT)?)?.*$/i, "")
+    .trim();
+}
+
+function isCategoryLabel(name: string): boolean {
+  return /^(full face helmets?|half face helmets?|open face helmets?|kids(?: helmets?)?|sport(?:s)?(?: helmets?)?|retro(?: helmets?)?|off[- ]road(?: helmets?)?|flip-?up(?: helmets?)?|modular(?: helmets?)?|lens|cycling equipment|helmet products|accessories|other accessories)$/i.test(
+    name.trim(),
+  );
+}
+
 function isListedName(name: string, loose = false): boolean {
   const trimmed = name.replace(/^MODEL[:：]\s*/i, "").trim();
   if (trimmed.length < 4 || trimmed.length > 80 || LISTED_NAV.test(trimmed) || NAV_NAME.test(trimmed) || SECTION.test(trimmed)) {
@@ -133,12 +148,13 @@ export function productsListedOnPage(input: {
 }): ScrapedProduct[] {
   if (!sameSite(input.pageUrl, input.siteHost)) return [];
   const names: string[] = [];
+  const imagesByName = new Map<string, string>();
   const add = (raw: string, loose = false) => {
-    const name = raw.replace(/^MODEL[:：]\s*/i, "").trim();
-    if (!isListedName(name, loose) || names.includes(name)) return;
+    const name = catalogTitle(raw.replace(/^MODEL[:：]\s*/i, ""));
+    if (!name || isCategoryLabel(name) || !isListedName(name, loose) || names.includes(name)) return;
     names.push(name);
   };
-  const text = input.text.replace(/([A-Z]{2,4}-\d{2,5})(?=[A-Z]{2,4}-|$|[^A-Za-z0-9])/g, " $1 ");
+  const text = input.text.replace(/([A-Z]{2,6}(?:-[A-Z0-9()]{1,16})+)(?=[A-Z]{2,6}-)/g, "$1 ");
   for (const token of text.split(/\s+/)) {
     add(token.replace(/^[|｜,，;；:：]+|[|｜,，;；:：]+$/g, ""));
   }
@@ -146,11 +162,28 @@ export function productsListedOnPage(input: {
     add(match[1].replace(/^[|｜,，;；:：/]+/, ""));
   }
   const hay = `${input.html ?? ""}\n${text}`;
-  for (const match of hay.matchAll(/\b([A-Z]{2,4}-\d{2,5}[A-Z]{0,2})\b/g)) {
+  for (const match of hay.matchAll(/\b([A-Z]{2,6}(?:-[A-Z0-9()]{1,16}){1,4})\b/g)) {
     add(match[1]);
   }
   for (const name of namesFromJsonLd(input.html ?? "")) add(name, true);
-  if (/product|goods|item|detail|sys-pd|\/pd\/|商品|产品/i.test(input.pageUrl)) {
+  if (input.html) {
+    const $ = cheerio.load(input.html);
+    $("a[href]").each((_, el) => {
+      const href = $(el).attr("href") ?? "";
+      const label = catalogTitle($(el).text());
+      if (!label || isCategoryLabel(label)) return;
+      const productish = /sys-pr|sys-pd|\/product|\/goods|\/item|\/detail/i.test(href);
+      if (label.length > 90) {
+        for (const match of label.matchAll(/\b([A-Z]{2,6}(?:-[A-Z0-9()]{1,16}){1,4})\b/g)) add(match[1]);
+      } else if (productish || MODEL_CODE.test(label)) {
+        add(label, productish);
+      }
+      const src = $(el).find("img").first().attr("src") ?? $(el).find("img").first().attr("data-src");
+      const photo = absoluteHttp(src ?? null, input.pageUrl);
+      if (photo && names.includes(label)) imagesByName.set(label, photo);
+    });
+  }
+  if (/product|goods|item|detail|sys-p[rd]|\/pd\/|商品|产品/i.test(input.pageUrl)) {
     for (const match of (input.html ?? "").matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)) {
       add(match[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim(), true);
     }
@@ -161,7 +194,7 @@ export function productsListedOnPage(input: {
     return {
       name,
       description: sentence,
-      image_url: null as string | null,
+      image_url: imagesByName.get(name) ?? null,
       source_url: input.pageUrl,
       category_id: categoryId(guessCategory(name, input.pageUrl, input.text), input.categories),
       details: {},
@@ -221,7 +254,7 @@ export function urlsFromModelPick(json: unknown, siteHost: string): string[] {
     const url = absoluteHttp(item.trim(), `https://${siteHost.replace(/^www\./i, "")}`);
     if (!url || !sameSite(url, siteHost) || urls.includes(url)) continue;
     urls.push(url);
-    if (urls.length >= 20) break;
+    if (urls.length >= 120) break;
   }
   return urls;
 }
@@ -279,6 +312,8 @@ export function productsFromPage(input: {
     const row = item as Record<string, unknown>;
     const name = blank(row.name);
     if (!name || name.length < 2 || name.length > 120 || NAV_NAME.test(name) || /price|sku|\$|€|¥/i.test(name)) continue;
+    if (/co-?operate|请输入要描述|information与|与我们共同经营/i.test(name)) continue;
+    if (isCategoryLabel(name)) continue;
     const description = blank(row.description)?.slice(0, 600) ?? null;
     const photos = contentImageUrls(images, input.pageUrl);
     const image =

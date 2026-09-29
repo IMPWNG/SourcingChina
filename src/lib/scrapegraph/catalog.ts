@@ -51,18 +51,39 @@ export function emptySiteFill(): SiteFill {
 }
 
 const CRAWL_PICK_SYSTEM =
-  'You pick pages on a supplier website to open for a sourcing directory. Reply JSON only: {"urls":["https://..."]}. Choose product catalogs, categories, product details, contact, about, factory, and certificate pages. Skip login, cart, language switchers, and duplicates. At most 20 URLs, only from the supplied list.';
+  'Tu oriente le crawl d\'un site fournisseur pour un annuaire sourcing. Les pages peuvent être en chinois, anglais ou mixte : traduis chaque intitulé en français pour te repérer (catalogue, catégorie, fiche produit, contact, usine, certificat). Réponds uniquement JSON : {"urls":["https://..."]}. Choisis TOUTES les pages catalogue, catégories, fiches produit, contact, à propos, usine et certificats. Ne saute aucune catégorie. Ignore login, panier, changeur de langue et doublons. Au plus 80 URLs, uniquement dans la liste fournie.';
 
 const PRODUCT_SYSTEM =
-  'You extract catalog products listed on these supplier pages (parts, helmets, chargers, model codes, and other items they sell). Reply with one JSON object only: {"products":[{"name":"","description":"","image_url":"","category":"","source_url":"","details":{}}]}. Use only names, descriptions, categories, and image URLs that appear in the supplied pages. source_url must be the page URL. Copy image_url from that page\'s IMAGES list when a product photo is listed. Do not invent products, prices, SKUs, or stock. Skip navigation, contact, and about-us text.';
+  'Tu extraits le catalogue COMPLET de ces pages fournisseur (pièces, casques, chargeurs, codes modèle, et tout ce qu\'ils vendent). Les pages peuvent être en chinois : garde le nom tel qu\'il apparaît dans name, et mets la traduction française dans details.name_fr et details.description_fr. Réponds un seul JSON : {"products":[{"name":"","description":"","image_url":"","category":"","source_url":"","details":{}}]}. Liste TOUS les produits visibles, pas un échantillon. Utilise uniquement des noms, descriptions, catégories et images présents dans les pages. source_url = URL de la page. image_url vient de la liste IMAGES de cette page. N\'invente ni produit, ni prix, ni SKU, ni stock. Ignore navigation, contact et à-propos.';
 
 type SitePage = { url: string; html: string; text: string; images: string[] };
 
 function pageScore(page: SitePage): number {
   const hay = `${page.url} ${page.text.slice(0, 400)}`;
-  if (/h-col-|sys-pd|product|goods|item|catalog|shop|collection|helmet|产品|商品/i.test(hay)) return 2;
+  if (/sys-pr|m5page=|h-col-/i.test(page.url)) return 3;
+  if (/sys-pd|product|goods|item|catalog|shop|collection|helmet|产品|商品/i.test(hay)) return 2;
   if (/contact|wechat|whatsapp|about|factory|cert|联系|关于/i.test(hay)) return 1;
   return 0;
+}
+
+function catalogUrlsFromHtml(html: string, pageUrl: string): { url: string; label: string }[] {
+  let origin = "";
+  try {
+    origin = new URL(pageUrl).origin;
+  } catch {
+    return [];
+  }
+  const found: { url: string; label: string }[] = [];
+  const seen = new Set<string>();
+  const add = (url: string, label: string) => {
+    if (seen.has(url)) return;
+    seen.add(url);
+    found.push({ url, label });
+  };
+  for (const match of html.matchAll(/sys-pr\/\?g=(\d+)/gi)) add(`${origin}/sys-pr/?g=${match[1]}`, `fiche ou catégorie produit g=${match[1]}`);
+  for (const match of html.matchAll(/<input[^>]*\bvalue=["'](\d+)["'][^>]*>/gi)) add(`${origin}/sys-pr/?g=${match[1]}`, `catégorie ou fiche g=${match[1]}`);
+  for (const match of html.matchAll(/h-col-(\d+)\.html/gi)) add(`${origin}/h-col-${match[1]}.html`, `colonne catalogue h-col-${match[1]}`);
+  return found;
 }
 
 function bareHost(value: string): string {
@@ -164,11 +185,11 @@ async function collectPages(start: string, deadline: number): Promise<SitePage[]
     }
     return pages;
   };
-  if (budget() < 25_000) {
+  if (budget() < 80_000) {
     const fetched = await scraplingCrawl({
       start,
-      maxPages: PRODUCT_PAGE_LIMIT,
-      maxDepth: PRODUCT_DEPTH,
+      maxPages: budget() < 50_000 ? 16 : 40,
+      maxDepth: 3,
       timeoutSec: 8,
       budgetMs: budget(),
     });
@@ -177,46 +198,56 @@ async function collectPages(start: string, deadline: number): Promise<SitePage[]
   const preview = asPages(
     await scraplingCrawl({
       start,
-      maxPages: 2,
-      maxDepth: 1,
+      maxPages: 8,
+      maxDepth: 2,
       timeoutSec: 8,
-      budgetMs: Math.min(20_000, budget()),
+      budgetMs: Math.min(40_000, budget()),
     }),
   );
-  const pickMs = Math.min(10_000, budget() - 20_000);
-  let seeds: string[] = [];
-  if (pickMs >= 2500) {
-    const links: { url: string; label: string }[] = [];
-    const seen = new Set<string>();
-    for (const page of preview) {
-      const $ = cheerio.load(page.html);
-      $("a[href]").each((_, el) => {
-        const href = $(el).attr("href") ?? "";
-        const label = $(el).text().replace(/\s+/g, " ").trim().slice(0, 80);
-        try {
-          const url = new URL(href, page.url);
-          if (!["http:", "https:"].includes(url.protocol)) return;
-          url.hash = "";
-          const clean = url.toString();
-          if (bareHost(clean) !== origin || seen.has(clean)) return;
-          seen.add(clean);
-          links.push({ url: clean, label });
-        } catch {
-          /* ignore */
-        }
-      });
+  const pickMs = Math.min(20_000, budget() - 40_000);
+  const links: { url: string; label: string }[] = [];
+  const seen = new Set<string>();
+  for (const page of preview) {
+    for (const item of catalogUrlsFromHtml(page.html, page.url)) {
+      if (seen.has(item.url)) continue;
+      seen.add(item.url);
+      links.push(item);
     }
-    if (links.length >= 3) {
-      const picked = await mammouthJson({
-        system: CRAWL_PICK_SYSTEM,
-        user: `SITE: ${start}\n${links
-          .slice(0, 80)
-          .map((link) => `${link.label || "(no label)"} | ${link.url}`)
-          .join("\n")}`,
-        timeoutMs: pickMs,
-      });
-      if (picked.ok) seeds = urlsFromModelPick(picked.json, new URL(start).host);
-    }
+    const $ = cheerio.load(page.html);
+    $("a[href]").each((_, el) => {
+      const href = $(el).attr("href") ?? "";
+      const label = $(el).text().replace(/\s+/g, " ").trim().slice(0, 80);
+      try {
+        const url = new URL(href, page.url);
+        if (!["http:", "https:"].includes(url.protocol)) return;
+        url.hash = "";
+        const clean = url.toString();
+        if (bareHost(clean) !== origin || seen.has(clean)) return;
+        seen.add(clean);
+        links.push({ url: clean, label });
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+  let seeds = urlsFromModelPick(
+    {
+      urls: links
+        .filter((link) => /sys-pr|h-col-|product|goods|item|catalog|商品|产品/i.test(`${link.label} ${link.url}`))
+        .map((link) => link.url),
+    },
+    new URL(start).host,
+  );
+  if (pickMs >= 2500 && links.length >= 3) {
+    const picked = await mammouthJson({
+      system: CRAWL_PICK_SYSTEM,
+      user: `SITE: ${start}\nLes intitulés ci-dessous sont bruts (souvent chinois). Traduis-les en français pour te repérer, puis choisis TOUTES les URLs catalogue, catégories, fiches produit, contact, usine et certificats — pas un échantillon.\n${links
+        .slice(0, 200)
+        .map((link) => `${link.label || "(sans intitulé)"} | ${link.url}`)
+        .join("\n")}`,
+      timeoutMs: pickMs,
+    });
+    if (picked.ok) seeds = [...new Set([...seeds, ...urlsFromModelPick(picked.json, new URL(start).host)])];
   }
   const fetched = await scraplingCrawl({
     start,
@@ -243,6 +274,7 @@ export async function scrapeSiteProducts(
 
   try {
     const pages = await collectPages(plan.website, deadline);
+    logInfo("product_crawl_pages", { host: siteHost, pages: pages.length });
     const fill = mergeExtractedPages(pages.map((page) => ({ url: page.url, extracted: extractFromHtml(page.html, page.url) })));
     if (!pages.length) return { reason: "failed", products: [], fill };
     const listed = uniqueProducts(
@@ -259,10 +291,10 @@ export async function scrapeSiteProducts(
     );
     const packed = [...pages]
       .sort((a, b) => pageScore(b) - pageScore(a))
-      .slice(0, 12)
-      .map((page) => `URL: ${page.url}\nTEXT: ${page.text.slice(0, 8_000)}\nIMAGES:\n${page.images.join("\n")}`)
+      .slice(0, 24)
+      .map((page) => `URL: ${page.url}\nTEXT: ${page.text.slice(0, 4_000)}\nIMAGES:\n${page.images.join("\n")}`)
       .join("\n\n")
-      .slice(0, 80_000);
+      .slice(0, 96_000);
     const remaining = deadline - Date.now();
     if (remaining < 1_500) {
       logInfo("product_crawl_failed", { error: "budget" });
