@@ -113,15 +113,26 @@ test("ai cooperate blurbs are not saved as products", () => {
       products: [
         { name: "BY-111", description: "Full face helmet." },
         { name: "information与我们共同经营BYB/RNG品牌头盔Co-operate", description: "Partner text." },
+        { name: "banner_text_2.png", description: "Homepage slide." },
+        { name: "banner_m_3.png", image_url: "/image/banner_m_3.png" },
       ],
     },
     pageUrl: "https://www.rng-helmets.com/sys-pr/?g=6",
-    imageUrls: [],
+    imageUrls: ["https://www.rng-helmets.com/image/banner_m_2.png", "https://www.rng-helmets.com/media/by-111.jpg"],
     siteHost: "www.rng-helmets.com",
     categories,
   });
   assert.equal(products.some((item) => item.name === "BY-111"), true);
   assert.equal(products.some((item) => /co-?operate/i.test(item.name)), false);
+  assert.equal(products.some((item) => /banner/i.test(item.name)), false);
+  assert.equal(productsListedOnPage({
+    text: "banner_text_2.png banner_title_3.png BY-111",
+    html: '<img src="/image/banner_text_2.png" alt="banner_text_2.png"><a href="/sys-pr/?g=6">banner_m_2.png</a>',
+    imageUrls: ["/image/banner_text_2.png"],
+    pageUrl: "https://www.rng-helmets.com/h-col-125.html",
+    siteHost: "www.rng-helmets.com",
+    categories,
+  }).some((item) => /banner|\.png/i.test(item.name)), false);
 });
 
 test("json-ld product names are kept and off-site crawl picks are dropped", () => {

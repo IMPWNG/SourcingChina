@@ -81,6 +81,14 @@ const LISTED_NAV = /^(首页|关于我们|产品中心|解决方案|新闻资讯
 const NAV_MARK = /首页|关于我们|关于|新闻|联系我们|注册|登录|荣誉|资质|企业文化|发展历程|常见问题|资料下载|合作伙伴|校企|产品中心|解决方案|About us|Register|Login|News|Our advantages/gi;
 
 const GENERIC = /^(helmets?|cycling|visor|jacket|gloves?|products?|arrivals?)$/i;
+const ASSET_NAME = /\.(png|jpe?g|gif|webp|svg|css|js|pdf)(\b|$)/i;
+const ASSET_LABEL = /banner[_-]?(text|title|m)?\d|slider[_-]|sprite[_-]|favicon|placeholder|hero[_-]|logo[_-]/i;
+const CHROME_IMAGE = /logo|icon|sprite|placeholder|richdefault|banner[_-]|slider|hero[_-]|title[_-]|wechat|weixin|facebook|youtube|douyin|qrcode|favicon/i;
+
+function isAssetName(name: string): boolean {
+  const trimmed = name.trim();
+  return ASSET_NAME.test(trimmed) || ASSET_LABEL.test(trimmed);
+}
 
 export function namePrintedOnPage(name: string, text: string): boolean {
   const needle = name.replace(/\s+/g, "").toLowerCase();
@@ -107,7 +115,7 @@ function isListedName(name: string, loose = false): boolean {
   if (trimmed.length < 4 || trimmed.length > 80 || LISTED_NAV.test(trimmed) || NAV_NAME.test(trimmed) || SECTION.test(trimmed)) {
     return false;
   }
-  if (/@/.test(trimmed) || GENERIC.test(trimmed) || /model[:：]/i.test(trimmed)) return false;
+  if (isAssetName(trimmed) || /@/.test(trimmed) || GENERIC.test(trimmed) || /model[:：]/i.test(trimmed)) return false;
   if (MODEL_CODE.test(trimmed) && !SKIP_MODEL.test(trimmed)) return true;
   if (loose) return !ABOUT.test(trimmed) && !/[，。！？]/.test(trimmed);
   if (!PRODUCTISH.test(trimmed)) return false;
@@ -132,7 +140,7 @@ export function contentImageUrls(urls: string[], pageUrl: string): string[] {
   const images: string[] = [];
   for (const raw of urls) {
     const url = absoluteHttp(raw, pageUrl);
-    if (!url || /logo|icon|sprite|placeholder|richdefault|wechat|weixin|facebook|youtube|douyin|qrcode|favicon/i.test(url)) continue;
+    if (!url || CHROME_IMAGE.test(url)) continue;
     if (!images.includes(url)) images.push(url);
   }
   return images;
@@ -180,7 +188,7 @@ export function productsListedOnPage(input: {
       }
       const src = $(el).find("img").first().attr("src") ?? $(el).find("img").first().attr("data-src");
       const photo = absoluteHttp(src ?? null, input.pageUrl);
-      if (photo && names.includes(label)) imagesByName.set(label, photo);
+      if (photo && !CHROME_IMAGE.test(photo) && names.includes(label)) imagesByName.set(label, photo);
     });
   }
   if (/product|goods|item|detail|sys-p[rd]|\/pd\/|商品|产品/i.test(input.pageUrl)) {
@@ -312,14 +320,14 @@ export function productsFromPage(input: {
     const row = item as Record<string, unknown>;
     const name = blank(row.name);
     if (!name || name.length < 2 || name.length > 120 || NAV_NAME.test(name) || /price|sku|\$|€|¥/i.test(name)) continue;
-    if (/co-?operate|请输入要描述|information与|与我们共同经营/i.test(name)) continue;
+    if (isAssetName(name) || /co-?operate|请输入要描述|information与|与我们共同经营/i.test(name)) continue;
     if (isCategoryLabel(name)) continue;
     const description = blank(row.description)?.slice(0, 600) ?? null;
     const photos = contentImageUrls(images, input.pageUrl);
+    const picked = absoluteHttp(blank(row.image_url) ?? blank(row.image), input.pageUrl);
     const image =
-      absoluteHttp(blank(row.image_url) ?? blank(row.image), input.pageUrl) ??
-      (photos.length ? photos[products.length % photos.length] ?? null : null) ??
-      (images.length === 1 ? images[0] : null);
+      (picked && !CHROME_IMAGE.test(picked) ? picked : null) ??
+      (photos.length ? photos[products.length % photos.length] ?? null : null);
     products.push({
       name,
       description,
@@ -338,6 +346,7 @@ export function uniqueProducts(products: ScrapedProduct[]): ScrapedProduct[] {
   const seen = new Set<string>();
   const unique: ScrapedProduct[] = [];
   for (const product of products) {
+    if (isAssetName(product.name) || isCategoryLabel(product.name)) continue;
     const key = product.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
