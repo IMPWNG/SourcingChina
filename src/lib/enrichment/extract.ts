@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import type { CompanyType } from "@/lib/domain";
-import { inferCompanyType, normalizeWebsite } from "@/lib/domain";
+import { inferCompanyType, isPlausibleAddress, isPlausiblePhone, normalizeWebsite } from "@/lib/domain";
 
 export type ExtractedPage = {
   phone: string | null;
@@ -32,22 +32,25 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
   $("script, style, noscript").remove();
   const text = clean($("body").text() || $.root().text());
   const emails = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
-  const phones: string[] = (text.match(/(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}/g) ?? []).filter(
-    (item) => item.replace(/\D/g, "").length >= 8,
-  );
+  const labeledPhone =
+    text.match(/(?:电话|手机|phone|tel(?:ephone)?|mobile|hotline)\s*[:：]\s*(\+?\d[\d\s-]{6,18})/i)?.[1] ?? null;
+  const phones: string[] = [];
+  if (labeledPhone && isPlausiblePhone(labeledPhone)) phones.push(labeledPhone.trim());
   $("a[href]").each((_, element) => {
     const href = $(element).attr("href") ?? "";
     const wa = href.match(/(?:wa\.me\/|whatsapp\.com\/send\?phone=)(\+?\d{8,15})/i);
     if (!wa?.[1]) return;
     const number = wa[1].startsWith("+") ? wa[1] : `+${wa[1]}`;
-    if (!phones.some((item) => item.replace(/\D/g, "").endsWith(number.replace(/\D/g, "").slice(-8)))) phones.unshift(number);
+    if (isPlausiblePhone(number) && !phones.some((item) => item.replace(/\D/g, "").endsWith(number.replace(/\D/g, "").slice(-8)))) {
+      phones.unshift(number);
+    }
   });
   const wechatMatch = text.match(/(?:wechat|weixin|微信)\s*[:：]?\s*(\+?\d[\d\s-]{8,18}|[A-Za-z][A-Za-z0-9_-]{3,})/i);
   const wechatRaw = wechatMatch?.[1]?.trim() ?? null;
   const wechatDigits = wechatRaw ? wechatRaw.replace(/\D/g, "") : "";
-  const wechat = wechatRaw && wechatDigits.length >= 8 ? wechatRaw : wechatRaw && /[A-Za-z]/.test(wechatRaw) ? wechatRaw : null;
-  if (wechatDigits.length >= 8 && !phones.some((item) => item.replace(/\D/g, "").includes(wechatDigits))) {
-    phones.unshift(wechatRaw!);
+  const wechat = wechatRaw && wechatDigits.length >= 8 && isPlausiblePhone(wechatRaw) ? wechatRaw : wechatRaw && /[A-Za-z]/.test(wechatRaw) ? wechatRaw : null;
+  if (wechat && wechatDigits.length >= 8 && isPlausiblePhone(wechat) && !phones.some((item) => item.replace(/\D/g, "").includes(wechatDigits))) {
+    phones.unshift(wechat);
   }
   let wechat_qr_url: string | null = null;
   $("img").each((_, element) => {
@@ -61,8 +64,9 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
       /* ignore bad src */
     }
   });
-  const address =
-    text.match(/(?:address|地址)\s*[:：]\s*([^.]{8,160})/i)?.[1]?.trim() ?? null;
+  const addressRaw =
+    text.match(/(?:address|地址)\s*[:：]\s*([^。\n]{8,70}?(?:号|Road|Street|Rd\.?))/i)?.[1]?.trim() ?? null;
+  const address = addressRaw && isPlausibleAddress(addressRaw) ? addressRaw : null;
   const markets = (text.match(/\b(EU|US|USA|UK|ASEAN|AFRICA|ASIA)\b/gi) ?? []).map((item) =>
     item.toUpperCase() === "USA" ? "US" : item.toUpperCase(),
   );
@@ -73,7 +77,7 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
     const name = clean($(element).text());
     if (name.length < 3 || name.length > 80) return;
     if (/price|sku|价格|货号|\$|€|¥|\bUSD\b/i.test(name)) return;
-    if (/^(about|contact|home|products|certificates|证书|关于|联系)$/i.test(name)) return;
+    if (/^(about|contact|home|products|certificates|证书|关于|联系|客户案例|服务优势|可持续发展)$/i.test(name)) return;
     const description = clean($(element).next("p").text()).slice(0, 280);
     if (families.some((family) => family.name.toLowerCase() === name.toLowerCase())) return;
     families.push({ name, description });
@@ -118,10 +122,11 @@ export function extractFromHtml(html: string, pageUrl: string): ExtractedPage {
       factories.push({ name: `${place} office`, address: line, city: place });
     }
   }
-  const labeledPhone = contactBlock.match(/电话\s*[:：]\s*(0\d{2,3}-\d{7,8})/)?.[1] ?? null;
+  const officePhone = contactBlock.match(/电话\s*[:：]\s*(0\d{2,3}-\d{7,8})/)?.[1] ?? null;
   const labeledEmail = contactBlock.match(/邮箱\s*[:：]\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1] ?? null;
+  const officePhoneOk = officePhone && isPlausiblePhone(officePhone) ? officePhone : null;
   const contacts: ExtractedPage["contacts"] =
-    labeledPhone || labeledEmail ? [{ name: "Office", title: null, phone: labeledPhone, email: labeledEmail }] : [];
+    officePhoneOk || labeledEmail ? [{ name: "Office", title: null, phone: officePhoneOk, email: labeledEmail }] : [];
   if (!contacts.length && (phones[0] || emails[0] || wechat)) {
     contacts.push({ name: "Sales", title: null, phone: phones[0]?.trim() ?? null, email: emails[0] ?? null });
   }

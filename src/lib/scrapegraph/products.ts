@@ -1,4 +1,4 @@
-import { COMPANY_TYPES, normalizeWebsite, type CompanyType } from "@/lib/domain";
+import { COMPANY_TYPES, isPlausibleAddress, isPlausiblePhone, normalizeWebsite, type CompanyType } from "@/lib/domain";
 import * as cheerio from "cheerio";
 
 export const PRODUCT_PAGE_LIMIT = 120;
@@ -23,7 +23,8 @@ export type ScrapedProduct = {
 const NAV_NAME = /^(home|about|contact|products|product|news|menu|login|search|首页|关于|联系|产品)$/i;
 const BLOCKED_DETAIL = /^(price|prices|sku|skus|stock|stocks|inventory|msrp|cost|costs)$/i;
 const MODEL_CODE = /^[A-Z]{2,6}(?:-[A-Z0-9()]{1,16}){1,4}$/i;
-const SKIP_MODEL = /^(ISO|CCC|DOT|ECE|GB|CE|IEC|UN|EN|DIN|ASTM|COL)-/i;
+const SKIP_MODEL = /^(ISO|CCC|DOT|ECE|GB|CE|IEC|UN|EN|DIN|ASTM|COL|UTF|JSON|HTTP|HTML|CORS|XML|CSS|BEARER)-/i;
+const JUNK_NAME = /^(UTF-8|BEARER-TOKEN|CHARSET|CONTENT-TYPE|JSON|HTML|UNDEFINED|NULL)$/i;
 
 export function planSiteCrawl(input: { hasKey: boolean; website: string | null }):
   | { action: "crawl"; website: string }
@@ -127,9 +128,12 @@ export function companyFillFromModel(json: unknown): CompanySiteFill {
   const root = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
   const raw = root.company && typeof root.company === "object" ? (root.company as Record<string, unknown>) : root;
   const type = String(raw.company_type ?? "").toLowerCase();
-  const company_type = COMPANY_TYPES.includes(type as CompanyType) ? (type as CompanyType) : "unknown";
+  let company_type = COMPANY_TYPES.includes(type as CompanyType) ? (type as CompanyType) : "unknown";
   const families: { name: string; description: string }[] = [];
   const summary = blank(raw.summary_fr) ?? blank(raw.summary_en) ?? blank(raw.summary) ?? "";
+  if (/express|logistique|livraison|快递|物流|freight|courier/i.test(summary) && company_type === "factory") {
+    company_type = "unknown";
+  }
   if (summary) families.push({ name: "Présentation", description: summary.slice(0, 800) });
   const list = Array.isArray(raw.families) ? raw.families : [];
   for (const item of list) {
@@ -142,14 +146,18 @@ export function companyFillFromModel(json: unknown): CompanySiteFill {
     families.push({ name: name.slice(0, 80), description: description.slice(0, 600) });
     if (families.length >= 12) break;
   }
+  const phone = blank(raw.phone);
+  const address = blank(raw.address);
   const markets = Array.isArray(raw.export_markets)
-    ? raw.export_markets.map((item) => blank(item)).filter((item): item is string => Boolean(item))
+    ? raw.export_markets
+        .map((item) => blank(item))
+        .filter((item): item is string => Boolean(item) && item.length < 24 && !/^(global|worldwide|international)$/i.test(item))
     : [];
   return {
-    phone: blank(raw.phone),
+    phone: phone && isPlausiblePhone(phone) ? phone : null,
     email: blank(raw.email),
     wechat: blank(raw.wechat),
-    address: blank(raw.address),
+    address: address && isPlausibleAddress(address) ? address : null,
     city: blank(raw.city),
     province: blank(raw.province),
     export_markets: markets,
@@ -173,12 +181,21 @@ function isCategoryLabel(name: string): boolean {
   );
 }
 
+export function isPlausibleProductName(name: string): boolean {
+  const trimmed = name.replace(/^MODEL[:：]\s*/i, "").trim();
+  if (trimmed.length < 3 || trimmed.length > 80) return false;
+  if (JUNK_NAME.test(trimmed) || SKIP_MODEL.test(trimmed)) return false;
+  if (/我的快递|运单查询|服务支持|客户案例|可持续发展|ESG|javascript|utf-?8/i.test(trimmed)) return false;
+  return !isAssetName(trimmed);
+}
+
 function isListedName(name: string, loose = false): boolean {
   const trimmed = name.replace(/^MODEL[:：]\s*/i, "").trim();
-  if (trimmed.length < 4 || trimmed.length > 80 || LISTED_NAV.test(trimmed) || NAV_NAME.test(trimmed) || SECTION.test(trimmed)) {
+  if (!isPlausibleProductName(trimmed)) return false;
+  if (trimmed.length < 4 || LISTED_NAV.test(trimmed) || NAV_NAME.test(trimmed) || SECTION.test(trimmed)) {
     return false;
   }
-  if (isAssetName(trimmed) || /@/.test(trimmed) || GENERIC.test(trimmed) || /model[:：]/i.test(trimmed)) return false;
+  if (/@/.test(trimmed) || GENERIC.test(trimmed) || /model[:：]/i.test(trimmed)) return false;
   if (MODEL_CODE.test(trimmed) && !SKIP_MODEL.test(trimmed)) return true;
   if (loose) return !ABOUT.test(trimmed) && !/[，。！？]/.test(trimmed);
   if (!PRODUCTISH.test(trimmed)) return false;
@@ -232,8 +249,14 @@ export function productsListedOnPage(input: {
   for (const match of text.matchAll(/(?:^|[\s|｜])([A-Za-z0-9.+-]{0,16}[\u4e00-\u9fff]{0,20}(?:BMS|充电器|控制器|换电平台|头盔))/g)) {
     add(match[1].replace(/^[|｜,，;；:：/]+/, ""));
   }
-  const hay = `${input.html ?? ""}\n${text}`;
-  for (const match of hay.matchAll(/\b([A-Z]{2,6}(?:-[A-Z0-9()]{1,16}){1,4})\b/g)) {
+  let visible = text;
+  if (input.html) {
+    visible = `${text} ${input.html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")}`;
+  }
+  for (const match of visible.matchAll(/\b([A-Z]{2,6}(?:-[A-Z0-9()]{1,16}){1,4})\b/g)) {
     add(match[1]);
   }
   for (const name of namesFromJsonLd(input.html ?? "")) add(name, true);
@@ -267,7 +290,7 @@ export function productsListedOnPage(input: {
       description: sentence,
       image_url: imagesByName.get(name) ?? null,
       source_url: input.pageUrl,
-      category_id: categoryId(guessCategory(name, input.pageUrl, input.text), input.categories),
+      category_id: categoryId(guessCategory(name, input.pageUrl), input.categories),
       details: {},
     };
   });
@@ -276,10 +299,10 @@ export function productsListedOnPage(input: {
   return [...described, ...namedOnly].slice(0, PRODUCT_SAVE_LIMIT);
 }
 
-function guessCategory(name: string, pageUrl: string, text: string): string | null {
-  const hay = `${name} ${pageUrl} ${text.slice(0, 1200)}`;
+function guessCategory(name: string, pageUrl: string): string | null {
+  const hay = `${name} ${pageUrl}`;
   if (/helmet|盔|visor/i.test(hay)) return "头盔";
-  if (/BMS|电池|换电/.test(name) || /BMS|电池/.test(hay)) return "电池";
+  if (/BMS|电池|换电/.test(name)) return "电池";
   if (/充电|控制器|电机/.test(name) || /charger|controller/i.test(hay)) return "电气";
   if (/cycling|骑行|jacket|glove|apparel/i.test(hay)) return "骑行服饰";
   if (/engine|活塞|发动机/i.test(hay)) return "发动机配件";
@@ -382,8 +405,8 @@ export function productsFromPage(input: {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     const name = blank(row.name);
-    if (!name || name.length < 2 || name.length > 120 || NAV_NAME.test(name) || /price|sku|\$|€|¥/i.test(name)) continue;
-    if (isAssetName(name) || /co-?operate|请输入要描述|information与|与我们共同经营/i.test(name)) continue;
+    if (!name || !isPlausibleProductName(name) || NAV_NAME.test(name) || /price|sku|\$|€|¥/i.test(name)) continue;
+    if (/co-?operate|请输入要描述|information与|与我们共同经营/i.test(name)) continue;
     if (isCategoryLabel(name)) continue;
     const description = blank(row.description)?.slice(0, 600) ?? null;
     const photos = contentImageUrls(images, input.pageUrl);
@@ -398,7 +421,7 @@ export function productsFromPage(input: {
       source_url: input.pageUrl,
       category_id:
         categoryId(blank(row.category), input.categories) ??
-        categoryId(guessCategory(name, input.pageUrl, name), input.categories),
+        categoryId(guessCategory(name, input.pageUrl), input.categories),
       details: detailsOf(row.details),
     });
   }
@@ -409,7 +432,7 @@ export function uniqueProducts(products: ScrapedProduct[]): ScrapedProduct[] {
   const seen = new Set<string>();
   const unique: ScrapedProduct[] = [];
   for (const product of products) {
-    if (isAssetName(product.name) || isCategoryLabel(product.name)) continue;
+    if (!isPlausibleProductName(product.name) || isCategoryLabel(product.name)) continue;
     const key = product.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

@@ -40,6 +40,21 @@ test("wechat digits, whatsapp links, and QR images are kept", () => {
   assert.equal(page.province, "Zhejiang");
 });
 
+test("courier homepages do not dump menus as the address or invent phones", () => {
+  const page = extractFromHtml(
+    `<html><head><meta charset="UTF-8"></head><body>
+      <p>地址：上海市青浦区华新镇华志路1685号 邮政编码： 201708 物流服务中通普件中通好快我的快递运单查询服务支持ESG报告</p>
+      <p>工业制造客户案例 快递 仓库招商</p>
+      <p>012345678901 BEARER-TOKEN UTF-8</p>
+    </body></html>`,
+    "https://www.zto.com/",
+  );
+  assert.equal(page.address, "上海市青浦区华新镇华志路1685号");
+  assert.equal(page.phone, null);
+  assert.equal(page.contacts.some((item) => item.phone === "012345678901"), false);
+  assert.equal(page.company_type, "unknown");
+});
+
 test("crawl respects robots.txt and the local fixture", async () => {
   const fixture = await crawlWebsite("fixture://sample-supplier");
   assert.equal(fixture.status, "succeeded");

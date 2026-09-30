@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, companyFillFromModel, planSiteCrawl, productOnPage, productsFromPage, productsListedOnPage, uniqueProducts, urlsFromModelPick } from "./products";
+import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, companyFillFromModel, isPlausibleProductName, planSiteCrawl, productOnPage, productsFromPage, productsListedOnPage, uniqueProducts, urlsFromModelPick } from "./products";
 
 const categories = [
   { id: "helmets-id", slug: "helmets", name_en: "Helmets", name_zh: "头盔" },
@@ -178,4 +178,41 @@ test("json-ld product names are kept and off-site crawl picks are dropped", () =
     ),
     ["https://apexride.example/products", "https://apexride.example/contact"],
   );
+});
+
+test("charset tokens and invented courier goods never become products", () => {
+  assert.equal(isPlausibleProductName("UTF-8"), false);
+  assert.equal(isPlausibleProductName("BEARER-TOKEN"), false);
+  assert.equal(isPlausibleProductName("BY-111"), true);
+  const listed = productsListedOnPage({
+    text: "中通快递 我的快递 运单查询",
+    html: `<html><head><meta charset="UTF-8"></head><body><script>Authorization: BEARER-TOKEN; charset=UTF-8</script><div data-sku="XTY-4RST"></div></body></html>`,
+    imageUrls: [],
+    pageUrl: "https://www.zto.com/",
+    siteHost: "www.zto.com",
+    categories,
+  });
+  assert.equal(listed.some((item) => /UTF-8|BEARER-TOKEN|XTY-4RST/i.test(item.name)), false);
+  const invented = productsFromPage({
+    json: { products: [{ name: "UTF-8" }, { name: "BEARER-TOKEN" }] },
+    pageUrl: "https://www.zto.com/",
+    imageUrls: [],
+    siteHost: "www.zto.com",
+    categories,
+  });
+  assert.equal(invented.length, 0);
+  const fill = companyFillFromModel({
+    company: {
+      summary_fr: "ZTO Express est un transporteur chinois de livraison express.",
+      company_type: "factory",
+      phone: "012345678901",
+      address: "上海市青浦区华新镇华志路1685号 我的快递运单查询服务支持",
+      export_markets: ["Global"],
+      families: [{ name: "International Shipping", description: "Cross-border." }],
+    },
+  });
+  assert.equal(fill.company_type, "unknown");
+  assert.equal(fill.phone, null);
+  assert.equal(fill.address, null);
+  assert.deepEqual(fill.export_markets, []);
 });

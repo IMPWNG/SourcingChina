@@ -137,12 +137,29 @@ export function extendPeriod(currentEnd: string | null, days: number, now: Date)
 }
 
 export function inferCompanyType(text: string): CompanyType {
-  const factory = /factory|制造|工厂|\u5382/i.test(text);
+  const courier = /快递|物流服务|express delivery|courier|freight forwarder|transporter/i.test(text);
+  const makesGoods = /汽摩|helmet|盔|配件制造|电池制造|汽配/i.test(text);
+  if (courier && !makesGoods) return "unknown";
+  const factory = /factory|制造|工厂/i.test(text);
   const trading = /trading|贸易|商贸|进出口/i.test(text);
   if (factory && trading) return "mixed";
   if (factory) return "factory";
   if (trading) return "trading";
   return "unknown";
+}
+
+export function isPlausiblePhone(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 5 || digits.length > 15) return false;
+  if (/^0?123456|^0123456|^(\d)\1{6,}$/.test(digits)) return false;
+  return true;
+}
+
+export function isPlausibleAddress(value: string): boolean {
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  if (trimmed.length < 8 || trimmed.length > 80) return false;
+  if (/我的快递|运单查询|服务支持|合作共生|问题反馈|客户案例|utf-?8|javascript|ESG报告|立即/i.test(trimmed)) return false;
+  return /号|路|街|道|镇|区|村|Road|Street|Rd\.?|Ave|Lane/i.test(trimmed);
 }
 
 function unique(values: string[]): string[] {
@@ -297,6 +314,8 @@ export function fillEmptyFields(primary: CompanyIdentity, incoming: Partial<Comp
     if (typeof next !== "string" || !next.trim()) continue;
     const current = primary[key];
     if (overwrite || current == null || (typeof current === "string" && !current.trim())) {
+      if (key === "address" && !isPlausibleAddress(next)) continue;
+      if (key === "phone" && !isPlausiblePhone(next)) continue;
       (patch as Record<string, string>)[key] = next.trim();
     }
   }
@@ -304,7 +323,8 @@ export function fillEmptyFields(primary: CompanyIdentity, incoming: Partial<Comp
     patch.company_type = incoming.company_type;
   }
   if (incoming.export_markets && incoming.export_markets.length && (overwrite || primary.export_markets.length === 0)) {
-    patch.export_markets = incoming.export_markets;
+    const markets = incoming.export_markets.filter((item) => item.length < 24 && !/^(global|worldwide|international)$/i.test(item));
+    if (markets.length) patch.export_markets = markets;
   }
   return patch;
 }

@@ -3,6 +3,7 @@ import "server-only";
 import * as cheerio from "cheerio";
 import robotsParser from "robots-parser";
 import type { CompanyType } from "@/lib/domain";
+import { isPlausibleAddress, isPlausiblePhone } from "@/lib/domain";
 import { mergeExtractedPages, SCRAPER_UA } from "@/lib/enrichment/crawl";
 import { extractFromHtml } from "@/lib/enrichment/extract";
 import { logInfo } from "@/lib/log";
@@ -56,7 +57,7 @@ const CRAWL_PICK_SYSTEM =
   'Tu oriente le crawl d\'un site fournisseur pour un annuaire sourcing. Les pages peuvent être en chinois, anglais ou mixte : traduis chaque intitulé en français pour te repérer (catalogue, catégorie, fiche produit, contact, usine, certificat). Réponds uniquement JSON : {"urls":["https://..."]}. Choisis TOUTES les pages catalogue, catégories, fiches produit, contact, à propos, usine et certificats. Ignore images, bannières, login, panier, changeur de langue et doublons. Au plus 80 URLs, uniquement dans la liste fournie.';
 
 const PRODUCT_SYSTEM =
-  'Tu lis un site fournisseur (souvent en chinois : traduis pour te repérer). Remplis le catalogue ET la fiche société. Réponds un seul JSON : {"company":{"summary_fr":"","summary_en":"","company_type":"factory|trading|mixed|unknown","families":[{"name":"","description":""}],"phone":"","email":"","wechat":"","address":"","city":"","province":"","export_markets":[],"contact_name":"","contact_title":""},"products":[{"name":"","description":"","image_url":"","category":"","source_url":"","details":{"name_zh":"","name_fr":""}}]}. company.summary_fr = 2 à 4 phrases en français (activité, type d\'entreprise, ville, ce qu\'ils vendent). families = gammes (casques, batteries…), pas des fichiers image. products = articles réellement vendus : le champ name est le nom IMPRIMÉ sur la page (chinois ou anglais), pas un SKU obligatoire, pas un nom de fichier png. details.name_fr = traduction. Ignore bannières, logos, navigation. Pages contact/à-propos pour téléphone, e-mail, WeChat, adresse. N\'invente ni prix ni stock.';
+  "Tu lis le crawl d'un site fournisseur. Tu dois COMPRENDRE la page avant de remplir la fiche : si c'est un transporteur / express / logistique, ce n'est pas une usine et ce n'est pas un catalogue de batteries. Réponds un seul JSON : {\"company\":{\"summary_fr\":\"\",\"summary_en\":\"\",\"company_type\":\"factory|trading|mixed|unknown\",\"families\":[{\"name\":\"\",\"description\":\"\"}],\"phone\":\"\",\"email\":\"\",\"wechat\":\"\",\"address\":\"\",\"city\":\"\",\"province\":\"\",\"export_markets\":[],\"contact_name\":\"\",\"contact_title\":\"\"},\"products\":[{\"name\":\"\",\"description\":\"\",\"image_url\":\"\",\"category\":\"\",\"source_url\":\"\",\"details\":{\"name_zh\":\"\",\"name_fr\":\"\"}}]}. company.summary_fr = 2 à 4 phrases en français sur CE que l'entreprise fait vraiment. company_type = factory seulement s'ils fabriquent des biens (casques, pièces, batteries) ; transporteur / express / logistique = unknown. products = uniquement ce que CETTE entreprise vend, nom IMPRIMÉ sur la page. Interdit : menus, charset (UTF-8), en-têtes HTTP (BEARER-TOKEN), fichiers png, études de cas d'autres marques, numéros inventés, marchés \"Global\". Si un champ n'est pas clairement sur la page, laisse-le vide. Pages contact/à-propos pour téléphone, e-mail, WeChat, adresse.";
 
 type SitePage = { url: string; html: string; text: string; images: string[] };
 
@@ -344,8 +345,7 @@ export async function scrapeSiteProducts(
       const page = pages.find((entry) => entry.url === product.source_url) ?? pages[0];
       const hay = page ? hayByUrl.get(page.url) ?? page.text : "";
       const seen = productOnPage(product.name, product.details, hay);
-      // ponytail: some catalogs are images/SPA with no printable name; keep AI rows that are not chrome. Upgrade: render JS.
-      if (!seen && listed.length) return [];
+      if (!seen) return [];
       const verbatim =
         product.description && namePrintedOnPage(product.description, hay) ? productDescription(product.description) : null;
       const fallback = listedByName.get(product.name);
@@ -353,26 +353,34 @@ export async function scrapeSiteProducts(
     });
     const products: ScrapedProduct[] = uniqueProducts([...listed, ...grounded]);
     const ai = companyFillFromModel(result.json);
+    const aiPhone = ai.phone && isPlausiblePhone(ai.phone) ? ai.phone : null;
+    const aiAddress = ai.address && isPlausibleAddress(ai.address) ? ai.address : null;
+    const courier = /express|logistique|livraison|快递|物流|freight|courier/i.test(ai.excerpt);
+    const fillType = courier && (extract.company_type === "factory" || ai.company_type === "factory")
+      ? "unknown"
+      : extract.company_type !== "unknown"
+        ? extract.company_type
+        : ai.company_type;
     const fill: SiteFill = {
-      phone: extract.phone ?? ai.phone,
+      phone: extract.phone ?? aiPhone,
       email: extract.email ?? ai.email,
       wechat: extract.wechat ?? ai.wechat,
       wechat_qr_url: extract.wechat_qr_url,
-      address: extract.address ?? ai.address,
+      address: extract.address ?? aiAddress,
       city: extract.city ?? ai.city,
       province: extract.province ?? ai.province,
       export_markets: extract.export_markets.length ? extract.export_markets : ai.export_markets,
-      company_type: extract.company_type !== "unknown" ? extract.company_type : ai.company_type,
+      company_type: fillType,
       families: [...ai.families, ...extract.families.filter((family) => !ai.families.some((item) => item.name.toLowerCase() === family.name.toLowerCase()))].slice(0, 12),
       certifications: extract.certifications,
       factories: extract.factories,
-      contacts: extract.contacts,
+      contacts: extract.contacts.filter((item) => !item.phone || isPlausiblePhone(item.phone)),
       excerpt: ai.excerpt || extract.excerpt,
     };
-    if (ai.phone || ai.email || ai.wechat) {
-      const has = fill.contacts.some((item) => item.phone === (ai.phone ?? item.phone) && item.email === (ai.email ?? item.email));
-      if (!has && (ai.phone || ai.email)) {
-        fill.contacts = [{ name: "Sales", title: null, phone: ai.phone, email: ai.email }, ...fill.contacts].slice(0, 6);
+    if (aiPhone || ai.email || ai.wechat) {
+      const has = fill.contacts.some((item) => item.phone === (aiPhone ?? item.phone) && item.email === (ai.email ?? item.email));
+      if (!has && (aiPhone || ai.email)) {
+        fill.contacts = [{ name: "Sales", title: null, phone: aiPhone, email: ai.email }, ...fill.contacts].slice(0, 6);
       }
     }
     return { reason: products.length || fill.excerpt || fill.families.length ? "saved" : "empty", products, fill };

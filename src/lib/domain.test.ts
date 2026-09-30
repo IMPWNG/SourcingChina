@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractCard, findDuplicatePairs, hasDirectoryAccess, normalizeWebsite, paymentMatchesPlan, phonesMatch } from "./domain";
+import { extractCard, fillEmptyFields, findDuplicatePairs, hasDirectoryAccess, inferCompanyType, isPlausibleAddress, isPlausiblePhone, normalizeWebsite, paymentMatchesPlan, phonesMatch } from "./domain";
 import { SAMPLE_CARD_TEXT } from "./seed";
 
 test("sample card keeps Chinese and English names and strips tracking params", () => {
@@ -71,4 +71,41 @@ test("plan amount is compared on the server, not trusted from the client", () =>
   assert.equal(paymentMatchesPlan(79, "USD"), false);
   process.env.AIRWALLEX_PLAN_AMOUNT = previousAmount;
   process.env.AIRWALLEX_PLAN_CURRENCY = previousCurrency;
+});
+
+test("courier pages are not factories and junk addresses stay off the card", () => {
+  assert.equal(inferCompanyType("中通快递 物流服务 工业制造客户案例 仓库招商"), "unknown");
+  assert.equal(inferCompanyType("Chongqing helmet factory 制造 工厂 ECE DOT"), "factory");
+  assert.equal(isPlausiblePhone("012345678901"), false);
+  assert.equal(isPlausiblePhone("95311"), true);
+  assert.equal(isPlausibleAddress("上海市青浦区华新镇华志路1685号"), true);
+  assert.equal(
+    isPlausibleAddress("上海市青浦区华新镇华志路1685号 邮政编码： 201708 物流服务中通普件我的快递运单查询ESG报告"),
+    false,
+  );
+  const patch = fillEmptyFields(
+    {
+      name_zh: null,
+      name_en: "ZTO",
+      brand: null,
+      company_type: "unknown",
+      address: null,
+      city: null,
+      province: null,
+      country: "CN",
+      website: "https://www.zto.com",
+      wechat: null,
+      phone: null,
+      email: null,
+      export_markets: [],
+    },
+    {
+      address: "上海市青浦区华新镇华志路1685号 我的快递运单查询",
+      phone: "012345678901",
+      export_markets: ["Global"],
+    },
+  );
+  assert.equal(patch.address, undefined);
+  assert.equal(patch.phone, undefined);
+  assert.equal(patch.export_markets, undefined);
 });
