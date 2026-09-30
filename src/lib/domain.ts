@@ -311,20 +311,38 @@ export function fillEmptyFields(primary: CompanyIdentity, incoming: Partial<Comp
   ];
   for (const key of keys) {
     const next = incoming[key];
-    if (typeof next !== "string" || !next.trim()) continue;
     const current = primary[key];
-    if (overwrite || current == null || (typeof current === "string" && !current.trim())) {
-      if (key === "address" && !isPlausibleAddress(next)) continue;
-      if (key === "phone" && !isPlausiblePhone(next)) continue;
-      (patch as Record<string, string>)[key] = next.trim();
+    const currentJunk =
+      (key === "address" && typeof current === "string" && current.trim() && !isPlausibleAddress(current)) ||
+      (key === "phone" && typeof current === "string" && current.trim() && !isPlausiblePhone(current));
+    if (typeof next !== "string" || !next.trim()) {
+      if (currentJunk) (patch as Record<string, string | null>)[key] = null;
+      continue;
     }
+    const vacant = overwrite || currentJunk || current == null || (typeof current === "string" && !current.trim());
+    if (!vacant) continue;
+    if (key === "address" && !isPlausibleAddress(next)) {
+      if (currentJunk) (patch as Record<string, string | null>)[key] = null;
+      continue;
+    }
+    if (key === "phone" && !isPlausiblePhone(next)) {
+      if (currentJunk) (patch as Record<string, string | null>)[key] = null;
+      continue;
+    }
+    (patch as Record<string, string>)[key] = next.trim();
   }
   if (incoming.company_type && incoming.company_type !== "unknown" && (overwrite || primary.company_type === "unknown")) {
     patch.company_type = incoming.company_type;
   }
-  if (incoming.export_markets && incoming.export_markets.length && (overwrite || primary.export_markets.length === 0)) {
+  const marketsJunk =
+    primary.export_markets.length > 0 &&
+    primary.export_markets.every((item) => /^(global|worldwide|international)$/i.test(item));
+  if (incoming.export_markets && incoming.export_markets.length && (overwrite || primary.export_markets.length === 0 || marketsJunk)) {
     const markets = incoming.export_markets.filter((item) => item.length < 24 && !/^(global|worldwide|international)$/i.test(item));
     if (markets.length) patch.export_markets = markets;
+    else if (marketsJunk) patch.export_markets = [];
+  } else if (marketsJunk && (!incoming.export_markets || incoming.export_markets.length === 0)) {
+    patch.export_markets = [];
   }
   return patch;
 }

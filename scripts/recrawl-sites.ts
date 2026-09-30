@@ -53,6 +53,13 @@ async function main(): Promise<void> {
       const crawl = await scrapeSiteProducts(row.website, categories, { budgetMs: 480_000 });
       console.log(`${label}: crawl ${crawl.reason}, ${crawl.products.length} product${crawl.products.length === 1 ? "" : "s"}`);
       const filled = fillEmptyFields(row, crawl.fill);
+      if (
+        crawl.fill.company_type === "unknown" &&
+        row.company_type === "factory" &&
+        /express|logistique|livraison|快递|物流|freight|courier/i.test(crawl.fill.excerpt)
+      ) {
+        filled.company_type = "unknown";
+      }
       const status = crawl.reason === "failed" ? "failed" : crawl.reason === "saved" || crawl.reason === "empty" ? "succeeded" : "skipped";
       const patch = { ...filled, last_scrape_status: status, last_scraped_at: new Date().toISOString() };
       await withSupabaseRetry("update company", async () => {

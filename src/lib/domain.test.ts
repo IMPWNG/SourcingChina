@@ -108,4 +108,25 @@ test("courier pages are not factories and junk addresses stay off the card", () 
   assert.equal(patch.address, undefined);
   assert.equal(patch.phone, undefined);
   assert.equal(patch.export_markets, undefined);
+  const cleaned = fillEmptyFields(
+    {
+      name_zh: null,
+      name_en: "ZTO",
+      brand: null,
+      company_type: "factory",
+      address: "上海市青浦区华新镇华志路1685号 我的快递运单查询",
+      city: "Shanghai",
+      province: "Shanghai",
+      country: "CN",
+      website: "https://www.zto.com",
+      wechat: null,
+      phone: "012345678901",
+      email: null,
+      export_markets: ["Global"],
+    },
+    { address: "上海市青浦区华新镇华志路1685号", phone: "95311", export_markets: ["EU"] },
+  );
+  assert.equal(cleaned.address, "上海市青浦区华新镇华志路1685号");
+  assert.equal(cleaned.phone, "95311");
+  assert.deepEqual(cleaned.export_markets, ["EU"]);
 });
