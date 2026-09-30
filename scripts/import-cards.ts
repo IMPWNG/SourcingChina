@@ -192,6 +192,66 @@ export async function upsertProducts(supabase: SupabaseClient, companyId: string
   });
 }
 
+export async function upsertSiteProfile(
+  supabase: SupabaseClient,
+  companyId: string,
+  fill: {
+    families: { name: string; description: string | null }[];
+    certifications: string[];
+    factories: { name: string; address: string | null; city: string | null }[];
+    contacts: { name: string; title: string | null; phone: string | null; email: string | null }[];
+  },
+): Promise<void> {
+  return withSupabaseRetry("upsert site profile", async () => {
+    if (fill.families.length) {
+      const cleared = await supabase.from("product_families").delete().eq("company_id", companyId);
+      if (cleared.error) throw new Error(cleared.error.message);
+      const rows = fill.families.slice(0, 12).map((family) => ({
+        company_id: companyId,
+        name: family.name.slice(0, 80),
+        description: family.description?.slice(0, 800) ?? null,
+        category_id: null,
+      }));
+      const inserted = await supabase.from("product_families").insert(rows);
+      if (inserted.error) throw new Error(inserted.error.message);
+    }
+    if (fill.certifications.length) {
+      const existing = await supabase.from("certifications").select("code").eq("company_id", companyId);
+      if (existing.error) throw new Error(existing.error.message);
+      const have = new Set(((existing.data ?? []) as { code: string }[]).map((item) => item.code.toLowerCase()));
+      const fresh = fill.certifications.filter((code) => !have.has(code.toLowerCase())).slice(0, 12);
+      if (fresh.length) {
+        const inserted = await supabase.from("certifications").insert(fresh.map((code) => ({ company_id: companyId, code })));
+        if (inserted.error) throw new Error(inserted.error.message);
+      }
+    }
+    if (fill.factories.length) {
+      const existing = await supabase.from("factories").select("name").eq("company_id", companyId);
+      if (existing.error) throw new Error(existing.error.message);
+      const have = new Set(((existing.data ?? []) as { name: string }[]).map((item) => item.name.toLowerCase()));
+      const fresh = fill.factories.filter((factory) => !have.has(factory.name.toLowerCase())).slice(0, 8);
+      if (fresh.length) {
+        const inserted = await supabase.from("factories").insert(fresh.map((factory) => ({ company_id: companyId, ...factory })));
+        if (inserted.error) throw new Error(inserted.error.message);
+      }
+    }
+    if (fill.contacts.length) {
+      const existing = await supabase.from("contacts").select("phone, email").eq("company_id", companyId);
+      if (existing.error) throw new Error(existing.error.message);
+      const have = new Set(
+        ((existing.data ?? []) as { phone: string | null; email: string | null }[]).map((item) => `${item.phone ?? ""}|${item.email ?? ""}`),
+      );
+      const fresh = fill.contacts.filter((contact) => !have.has(`${contact.phone ?? ""}|${contact.email ?? ""}`)).slice(0, 6);
+      if (fresh.length) {
+        const inserted = await supabase.from("contacts").insert(
+          fresh.map((contact) => ({ company_id: companyId, ...contact, is_public: true })),
+        );
+        if (inserted.error) throw new Error(inserted.error.message);
+      }
+    }
+  });
+}
+
 async function main(): Promise<void> {
   loadEnvLocal();
   const file = process.argv[2];

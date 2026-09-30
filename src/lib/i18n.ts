@@ -84,6 +84,7 @@ const copy = {
     samplePage: "Sample page used to demonstrate enrichment",
     markets: "Export markets",
     notStated: "Not stated",
+    resume: "Overview",
     products: "Products",
     noProducts: "No products saved yet.",
     familiesTitle: "Product families",
@@ -192,6 +193,7 @@ const copy = {
     samplePage: "Page d’exemple utilisée pour la démonstration",
     markets: "Marchés d’export",
     notStated: "Non indiqué",
+    resume: "Présentation",
     products: "Produits",
     noProducts: "Aucun produit enregistré.",
     familiesTitle: "Familles de produits",
@@ -254,6 +256,44 @@ export function companyTypeLabel(type: string, locale: Locale): string {
   return companyTypes[type]?.[locale] ?? type;
 }
 
+export function companyResume(
+  company: {
+    company_type: string;
+    city: string | null;
+    province: string | null;
+    category_ids: string[];
+    families: { name: string; description: string | null }[];
+  },
+  categories: { id: string; slug: string; name_en: string }[],
+  locale: Locale,
+): { presentation: string | null; lines: { name: string; description: string | null }[] } {
+  const presentation =
+    company.families.find((family) => /présentation|overview|activité/i.test(family.name))?.description?.trim() ?? null;
+  const lines = company.families.filter((family) => !/présentation|overview|activité/i.test(family.name));
+  if (presentation) return { presentation, lines };
+  const type = companyTypeLabel(company.company_type, locale);
+  const place = [company.city, company.province].filter(Boolean).join(", ");
+  const sectors = company.category_ids
+    .map((id) => categories.find((item) => item.id === id))
+    .filter((item): item is { id: string; slug: string; name_en: string } => Boolean(item))
+    .map((item) => categoryLabel(item.slug, locale, item.name_en));
+  const parts: string[] = [];
+  if (locale === "fr") {
+    parts.push(place ? `${type} basée à ${place}.` : `${type}.`);
+    if (sectors.length) parts.push(`Secteur : ${sectors.join(", ")}.`);
+  } else {
+    parts.push(place ? `${type} based in ${place}.` : `${type}.`);
+    if (sectors.length) parts.push(`Activity: ${sectors.join(", ")}.`);
+  }
+  const extra = lines
+    .map((family) => family.description || family.name)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (extra.length) parts.push(extra.join(" "));
+  const text = parts.join(" ").replace(/Non classé\.\s*|Not classified\.\s*/g, "").trim();
+  return { presentation: text || null, lines };
+}
+
 export function translated(
   details: Record<string, string>,
   key: "name" | "description" | "address" | "city" | "brand",
@@ -265,6 +305,7 @@ export function translated(
 }
 
 export const HIDDEN_DETAIL_KEYS = new Set([
+  "name_zh",
   "name_en",
   "name_fr",
   "description_en",

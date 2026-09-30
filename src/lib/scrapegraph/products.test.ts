@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, planSiteCrawl, productsFromPage, productsListedOnPage, uniqueProducts, urlsFromModelPick } from "./products";
+import { UPLOAD_PRODUCT_CRAWL_MS, catalogMessage, companyFillFromModel, planSiteCrawl, productOnPage, productsFromPage, productsListedOnPage, uniqueProducts, urlsFromModelPick } from "./products";
 
 const categories = [
   { id: "helmets-id", slug: "helmets", name_en: "Helmets", name_zh: "头盔" },
@@ -133,6 +133,32 @@ test("ai cooperate blurbs are not saved as products", () => {
     siteHost: "www.rng-helmets.com",
     categories,
   }).some((item) => /banner|\.png/i.test(item.name)), false);
+});
+
+test("banner filenames in html src are not treated as printed product names", () => {
+  assert.equal(
+    productOnPage("banner_text_2.png", {}, '<img src="/image/banner_text_2.png">BY-111'),
+    false,
+  );
+  assert.equal(productOnPage("BY-111", {}, "Catalog BY-111 full face"), true);
+  assert.equal(productOnPage("Casque intégral", { name_zh: "全盔" }, "产品 全盔 ECE"), true);
+});
+
+test("ai company json becomes a french summary and contact fields", () => {
+  const fill = companyFillFromModel({
+    company: {
+      summary_fr: "Usine de casques à Yueqing, Zhejiang.",
+      company_type: "factory",
+      phone: "+86 577 0000",
+      families: [{ name: "Casques intégraux", description: "ECE et DOT." }, { name: "banner_m_2.png", description: "slide" }],
+    },
+  });
+  assert.equal(fill.company_type, "factory");
+  assert.match(fill.excerpt, /Yueqing/);
+  assert.equal(fill.families[0]?.name, "Présentation");
+  assert.equal(fill.families.some((item) => item.name === "Casques intégraux"), true);
+  assert.equal(fill.families.some((item) => /banner/i.test(item.name)), false);
+  assert.equal(fill.phone, "+86 577 0000");
 });
 
 test("json-ld product names are kept and off-site crawl picks are dropped", () => {

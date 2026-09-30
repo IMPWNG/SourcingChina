@@ -12,6 +12,8 @@ import {
   PRODUCT_CRAWL_MS,
   PRODUCT_DEPTH,
   PRODUCT_PAGE_LIMIT,
+  productOnPage,
+  companyFillFromModel,
   namePrintedOnPage,
   planSiteCrawl,
   productDescription,
@@ -54,7 +56,7 @@ const CRAWL_PICK_SYSTEM =
   'Tu oriente le crawl d\'un site fournisseur pour un annuaire sourcing. Les pages peuvent être en chinois, anglais ou mixte : traduis chaque intitulé en français pour te repérer (catalogue, catégorie, fiche produit, contact, usine, certificat). Réponds uniquement JSON : {"urls":["https://..."]}. Choisis TOUTES les pages catalogue, catégories, fiches produit, contact, à propos, usine et certificats. Ignore images, bannières, login, panier, changeur de langue et doublons. Au plus 80 URLs, uniquement dans la liste fournie.';
 
 const PRODUCT_SYSTEM =
-  'Tu extraits le catalogue COMPLET et les infos société. Les pages peuvent être en chinois : garde le nom tel qu\'il apparaît dans name, traduction française dans details.name_fr et details.description_fr. Réponds un seul JSON : {"products":[{"name":"","description":"","image_url":"","category":"","source_url":"","details":{}}]}. Un produit = un article vendu (modèle, SKU, casque, pièce) avec un nom humain. Interdit : noms de fichiers (banner_text_2.png, banner_m_3.png, *.png/*.jpg), bannières, sliders, logos, boutons, navigation, contact, à-propos. image_url = photo PRODUIT dans IMAGES, jamais une bannière. Liste TOUS les vrais produits, pas un échantillon. source_url = URL de la page. N\'invente ni produit, ni prix, ni stock.';
+  'Tu lis un site fournisseur (souvent en chinois : traduis pour te repérer). Remplis le catalogue ET la fiche société. Réponds un seul JSON : {"company":{"summary_fr":"","summary_en":"","company_type":"factory|trading|mixed|unknown","families":[{"name":"","description":""}],"phone":"","email":"","wechat":"","address":"","city":"","province":"","export_markets":[],"contact_name":"","contact_title":""},"products":[{"name":"","description":"","image_url":"","category":"","source_url":"","details":{"name_zh":"","name_fr":""}}]}. company.summary_fr = 2 à 4 phrases en français (activité, type d\'entreprise, ville, ce qu\'ils vendent). families = gammes (casques, batteries…), pas des fichiers image. products = articles réellement vendus : le champ name est le nom IMPRIMÉ sur la page (chinois ou anglais), pas un SKU obligatoire, pas un nom de fichier png. details.name_fr = traduction. Ignore bannières, logos, navigation. Pages contact/à-propos pour téléphone, e-mail, WeChat, adresse. N\'invente ni prix ni stock.';
 
 type SitePage = { url: string; html: string; text: string; images: string[] };
 
@@ -275,8 +277,8 @@ export async function scrapeSiteProducts(
   try {
     const pages = await collectPages(plan.website, deadline);
     logInfo("product_crawl_pages", { host: siteHost, pages: pages.length });
-    const fill = mergeExtractedPages(pages.map((page) => ({ url: page.url, extracted: extractFromHtml(page.html, page.url) })));
-    if (!pages.length) return { reason: "failed", products: [], fill };
+    const extract = mergeExtractedPages(pages.map((page) => ({ url: page.url, extracted: extractFromHtml(page.html, page.url) })));
+    if (!pages.length) return { reason: "failed", products: [], fill: extract };
     const listed = uniqueProducts(
       pages.flatMap((page) =>
         productsListedOnPage({
@@ -292,13 +294,16 @@ export async function scrapeSiteProducts(
     const packed = [...pages]
       .sort((a, b) => pageScore(b) - pageScore(a))
       .slice(0, 24)
-      .map((page) => `URL: ${page.url}\nTEXT: ${page.text.slice(0, 4_000)}\nIMAGES:\n${page.images.join("\n")}`)
+      .map((page) => {
+        const contact = /contact|about|factory|cert|联系|关于|工厂|资质/i.test(`${page.url} ${page.text.slice(0, 200)}`);
+        return `URL: ${page.url}\nTEXT: ${page.text.slice(0, contact ? 8_000 : 4_000)}\nIMAGES:\n${page.images.join("\n")}`;
+      })
       .join("\n\n")
       .slice(0, 96_000);
     const remaining = deadline - Date.now();
     if (remaining < 1_500) {
       logInfo("product_crawl_failed", { error: "budget" });
-      return { reason: listed.length ? "saved" : "failed", products: listed, fill };
+      return { reason: listed.length ? "saved" : "failed", products: listed, fill: extract };
     }
     const result = await mammouthJson({
       system: PRODUCT_SYSTEM,
@@ -307,7 +312,7 @@ export async function scrapeSiteProducts(
     });
     if (!result.ok) {
       logInfo("product_crawl_failed", { error: result.error });
-      return { reason: listed.length ? "saved" : "failed", products: listed, fill };
+      return { reason: listed.length ? "saved" : "failed", products: listed, fill: extract };
     }
     const record = result.json && typeof result.json === "object" ? (result.json as { products?: unknown[] }) : {};
     const items = Array.isArray(record.products) ? record.products : [];
@@ -334,18 +339,43 @@ export async function scrapeSiteProducts(
       }),
     );
     const listedByName = new Map(listed.map((product) => [product.name, product]));
+    const hayByUrl = new Map(pages.map((page) => [page.url, page.text]));
     const grounded = rows.flatMap((product) => {
-      const page = pages.find((entry) => entry.url === product.source_url);
-      if (!page || !namePrintedOnPage(product.name, `${page.text}\n${page.html}`)) return [];
+      const page = pages.find((entry) => entry.url === product.source_url) ?? pages[0];
+      const hay = page ? hayByUrl.get(page.url) ?? page.text : "";
+      const seen = productOnPage(product.name, product.details, hay);
+      // ponytail: some catalogs are images/SPA with no printable name; keep AI rows that are not chrome. Upgrade: render JS.
+      if (!seen && listed.length) return [];
       const verbatim =
-        product.description && namePrintedOnPage(product.description, `${page.text}\n${page.html}`)
-          ? productDescription(product.description)
-          : null;
+        product.description && namePrintedOnPage(product.description, hay) ? productDescription(product.description) : null;
       const fallback = listedByName.get(product.name);
-      return [{ ...product, description: verbatim ?? fallback?.description ?? null }];
+      return [{ ...product, description: verbatim ?? product.description ?? fallback?.description ?? null }];
     });
     const products: ScrapedProduct[] = uniqueProducts([...listed, ...grounded]);
-    return { reason: products.length ? "saved" : "empty", products, fill };
+    const ai = companyFillFromModel(result.json);
+    const fill: SiteFill = {
+      phone: extract.phone ?? ai.phone,
+      email: extract.email ?? ai.email,
+      wechat: extract.wechat ?? ai.wechat,
+      wechat_qr_url: extract.wechat_qr_url,
+      address: extract.address ?? ai.address,
+      city: extract.city ?? ai.city,
+      province: extract.province ?? ai.province,
+      export_markets: extract.export_markets.length ? extract.export_markets : ai.export_markets,
+      company_type: extract.company_type !== "unknown" ? extract.company_type : ai.company_type,
+      families: [...ai.families, ...extract.families.filter((family) => !ai.families.some((item) => item.name.toLowerCase() === family.name.toLowerCase()))].slice(0, 12),
+      certifications: extract.certifications,
+      factories: extract.factories,
+      contacts: extract.contacts,
+      excerpt: ai.excerpt || extract.excerpt,
+    };
+    if (ai.phone || ai.email || ai.wechat) {
+      const has = fill.contacts.some((item) => item.phone === (ai.phone ?? item.phone) && item.email === (ai.email ?? item.email));
+      if (!has && (ai.phone || ai.email)) {
+        fill.contacts = [{ name: "Sales", title: null, phone: ai.phone, email: ai.email }, ...fill.contacts].slice(0, 6);
+      }
+    }
+    return { reason: products.length || fill.excerpt || fill.families.length ? "saved" : "empty", products, fill };
   } catch (error) {
     const message = error instanceof Error ? error.message : "request_failed";
     logInfo("product_crawl_failed", { error: message.slice(0, 180) });

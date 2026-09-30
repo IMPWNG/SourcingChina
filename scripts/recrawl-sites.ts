@@ -5,7 +5,7 @@ import { fillEmptyFields, type CompanyIdentity } from "@/lib/domain";
 import { fetchRemoteImage } from "@/lib/enrichment/extract";
 import { scrapeSiteProducts } from "@/lib/scrapegraph/catalog";
 import { CATEGORIES } from "@/lib/seed";
-import { cardsSupabase, upsertProducts, upsertWechatQr } from "./import-cards";
+import { cardsSupabase, upsertProducts, upsertSiteProfile, upsertWechatQr } from "./import-cards";
 import { loadEnvLocal } from "./load-env";
 import { withSupabaseRetry } from "./supabase-retry";
 
@@ -39,7 +39,9 @@ async function main(): Promise<void> {
     .order("created_at", { ascending: true });
   if (listed.error) throw new Error(listed.error.message);
   const filter = process.argv.slice(2).filter((arg) => arg !== "--").join(" ").trim().toLowerCase();
+  const SKIP_SITE = /wa\.me|weixin\.qq|wx\.hlcode|mall\.jd\.com\/qr/i;
   const rows = ((listed.data ?? []) as CompanyRow[]).filter((row) => {
+    if (SKIP_SITE.test(row.website ?? "")) return false;
     if (!filter) return true;
     return `${row.website} ${row.brand} ${row.name_en} ${row.name_zh} ${row.id}`.toLowerCase().includes(filter);
   });
@@ -94,6 +96,12 @@ async function main(): Promise<void> {
         catalog: crawl.reason,
       };
       const saved = await upsertProducts(supabase, row.id, card, { replace: true });
+      await upsertSiteProfile(supabase, row.id, {
+        families: crawl.fill.families,
+        certifications: crawl.fill.certifications,
+        factories: crawl.fill.factories,
+        contacts: crawl.fill.contacts,
+      });
       console.log(`${label}: ${crawl.reason}, ${saved} product${saved === 1 ? "" : "s"}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "crawl failed";

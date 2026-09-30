@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductList } from "@/components/product-list";
 import { companyDirectoryPath, isCompanyId } from "@/lib/company-slug";
 import { getLocale, getMessages } from "@/lib/i18n-server";
-import { categoryLabel, companyTypeLabel, translated } from "@/lib/i18n";
+import { categoryLabel, companyResume, companyTypeLabel, translated } from "@/lib/i18n";
 import { directory } from "@/lib/store";
 
 type Params = { slug: string };
@@ -31,6 +31,7 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
   const title = company.name_en || company.name_zh || company.brand || t.unnamed;
   const city = translated(shared, "city", locale, company.city);
   const website = company.website?.startsWith("fixture:") ? null : company.website;
+  const resume = companyResume(company, categories, locale);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 pb-16">
@@ -45,6 +46,7 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
           <Badge variant="outline">{companyTypeLabel(company.company_type, locale)}</Badge>
         </div>
         {company.brand ? <p className="text-sm">{t.brand}: {translated(shared, "brand", locale, company.brand)}</p> : null}
+        {resume.presentation ? <p className="max-w-2xl text-sm text-muted-foreground">{resume.presentation}</p> : null}
       </header>
       <div className="flex flex-wrap gap-2">
         {company.category_ids.map((categoryId) => {
@@ -92,23 +94,30 @@ export default async function CompanyPage({ params }: { params: Promise<Params> 
           </CardContent>
         </Card>
       ) : null}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t.familiesTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {company.families.length === 0 ? (
-            <p className="text-muted-foreground">{t.noFamilies}</p>
-          ) : (
-            company.families.map((family) => (
-              <div key={family.id}>
+      {resume.lines.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t.familiesTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {resume.lines.map((family) => (
+              <div key={family.name}>
                 <p className="font-medium">{family.name}</p>
                 {family.description ? <p className="text-muted-foreground">{family.description}</p> : null}
               </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+            ))}
+          </CardContent>
+        </Card>
+      ) : company.families.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t.familiesTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">{t.noFamilies}</p>
+          </CardContent>
+        </Card>
+      ) : null}
       {company.certifications.length ? (
         <Card>
           <CardHeader>

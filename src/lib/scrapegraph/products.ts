@@ -1,4 +1,4 @@
-import { normalizeWebsite } from "@/lib/domain";
+import { COMPANY_TYPES, normalizeWebsite, type CompanyType } from "@/lib/domain";
 import * as cheerio from "cheerio";
 
 export const PRODUCT_PAGE_LIMIT = 120;
@@ -94,6 +94,69 @@ export function namePrintedOnPage(name: string, text: string): boolean {
   const needle = name.replace(/\s+/g, "").toLowerCase();
   if (needle.length < 2) return false;
   return text.replace(/\s+/g, "").toLowerCase().includes(needle);
+}
+
+const WEAK_TOKEN = /^(full|face|half|open|type|series|model|product|products|helmet|helmets|casque|the|and|with|for)$/i;
+
+/** Match a product against visible page text, not image URLs in the HTML. */
+export function productOnPage(name: string, details: Record<string, string>, hay: string): boolean {
+  const visible = hay.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/\b(?:src|href)=["'][^"']+["']/gi, " ");
+  if (namePrintedOnPage(name, visible)) return true;
+  for (const key of ["name_zh", "name_en", "name_fr"]) {
+    if (details[key] && namePrintedOnPage(details[key], visible)) return true;
+  }
+  const tokens = name.split(/[\s/|,，]+/).filter((token) => token.length >= 5 && !WEAK_TOKEN.test(token));
+  if (tokens.length < 2) return false;
+  return tokens.filter((token) => namePrintedOnPage(token, visible)).length >= 2;
+}
+
+export type CompanySiteFill = {
+  phone: string | null;
+  email: string | null;
+  wechat: string | null;
+  address: string | null;
+  city: string | null;
+  province: string | null;
+  export_markets: string[];
+  company_type: CompanyType;
+  families: { name: string; description: string }[];
+  excerpt: string;
+};
+
+export function companyFillFromModel(json: unknown): CompanySiteFill {
+  const root = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
+  const raw = root.company && typeof root.company === "object" ? (root.company as Record<string, unknown>) : root;
+  const type = String(raw.company_type ?? "").toLowerCase();
+  const company_type = COMPANY_TYPES.includes(type as CompanyType) ? (type as CompanyType) : "unknown";
+  const families: { name: string; description: string }[] = [];
+  const summary = blank(raw.summary_fr) ?? blank(raw.summary_en) ?? blank(raw.summary) ?? "";
+  if (summary) families.push({ name: "Présentation", description: summary.slice(0, 800) });
+  const list = Array.isArray(raw.families) ? raw.families : [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const name = blank(row.name);
+    if (!name || isAssetName(name) || isCategoryLabel(name) || /présentation|overview/i.test(name)) continue;
+    const description = blank(row.description) ?? "";
+    if (families.some((family) => family.name.toLowerCase() === name.toLowerCase())) continue;
+    families.push({ name: name.slice(0, 80), description: description.slice(0, 600) });
+    if (families.length >= 12) break;
+  }
+  const markets = Array.isArray(raw.export_markets)
+    ? raw.export_markets.map((item) => blank(item)).filter((item): item is string => Boolean(item))
+    : [];
+  return {
+    phone: blank(raw.phone),
+    email: blank(raw.email),
+    wechat: blank(raw.wechat),
+    address: blank(raw.address),
+    city: blank(raw.city),
+    province: blank(raw.province),
+    export_markets: markets,
+    company_type,
+    families,
+    excerpt: summary.slice(0, 800),
+  };
 }
 
 function catalogTitle(raw: string): string {

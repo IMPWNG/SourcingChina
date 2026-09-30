@@ -22,7 +22,7 @@ export function ProductList({
         const details = Object.entries(product.details).filter(([key]) => !HIDDEN_DETAIL_KEYS.has(key));
         return (
           <li key={product.id} className="flex gap-3 text-sm">
-            {product.image_url && !/logo|icon|wechat|weixin|facebook|youtube|douyin|qrcode/i.test(product.image_url) ? (
+            {product.image_url && !/logo|icon|banner[_-]|slider|wechat|weixin|facebook|youtube|douyin|qrcode/i.test(product.image_url) ? (
               // Supplier photos live on arbitrary hosts, so they are not run through the image optimizer.
               // eslint-disable-next-line @next/next/no-img-element
               <img src={product.image_url} alt={name} width={80} height={80} loading="lazy" decoding="async" className="h-20 w-20 shrink-0 rounded-md object-cover" />
